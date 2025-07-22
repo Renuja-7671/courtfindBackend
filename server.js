@@ -10,10 +10,9 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: 'https://courtfind-frontend.vercel.app',
+  origin: '*',
   credentials: true
 }));
-app.options('*', cors()); // handle preflight
 
 app.use(express.json()); // JSON Parsing (No need for bodyParser.json())
 app.use(express.urlencoded({ extended: true })); // Handle form data
