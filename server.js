@@ -10,7 +10,7 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: 'https://courtfind-frontend.vercel.app',
+  origin: '*',
   credentials: true
 }));
 
