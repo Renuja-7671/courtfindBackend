@@ -26,16 +26,16 @@ exports.changePassword = async (req, res) => {
         }
 
         const user = results[0];
-        const passwordMatch = await bcrypt.compare(currentPassword, user.password);
+        //const passwordMatch = await bcrypt.compare(currentPassword, user.password);
 
-        if (!passwordMatch) {
+        if (currentPassword!==user.password) {
             return res.status(400).json({ message: "Incorrect current password" });
         }
 
         // Hash new password and update
-        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        //const hashedPassword = await bcrypt.hash(newPassword, 10);
         const updateSql = 'UPDATE users SET password = ? WHERE userId = ?';
-        db.query(updateSql, [hashedPassword, userId], (err, result) => {
+        db.query(updateSql, [newPassword, userId], (err, result) => {
             if (err) return res.status(500).json({ message: "Error updating password" });
 
             res.json({ message: "Password updated successfully" });

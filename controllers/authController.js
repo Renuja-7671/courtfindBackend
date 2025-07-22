@@ -210,7 +210,7 @@ exports.resetPassword = async (req, res) => {
                 return res.status(400).json({ message: "Invalid or expired token" });
             }
 
-            const hashedPassword = bcrypt.hashSync(password, 10);
+            //const hashedPassword = bcrypt.hashSync(password, 10);
 
             // Ensure user.id is defined before updating the password
             if (!user.userId) {
@@ -218,7 +218,7 @@ exports.resetPassword = async (req, res) => {
             }
 
             // Update the password in the database
-            User.updateUserPassword(user.userId, hashedPassword, (updateErr) => {
+            User.updateUserPassword(user.userId, password, (updateErr) => {
                 if (updateErr) {
                     console.error("Error updating password:", updateErr);
                     return res.status(500).json({ message: "Error updating password", error: updateErr });
