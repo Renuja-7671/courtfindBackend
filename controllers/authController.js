@@ -7,12 +7,26 @@ require("dotenv").config();
 const User = require('../models/userModel');
 
 exports.register = async (req, res) => {
+     const { role, firstName, lastName, mobile, country, province, zip, address, email, password, ConfirmPassword } = req.body;
     return res.status(404).json({
             message: 'Unexpected error during registrationtydytdthdtydc',
+            data: {
+                role,
+                firstName,
+                lastName,
+                mobile,
+                country,
+                province,
+                zip,
+                address,
+                email,
+                password,
+                ConfirmPassword
+            }
         });
 
     try { 
-        const { role, firstName, lastName, mobile, country, province, zip, address, email, password, ConfirmPassword } = req.body;
+       
 
     if (!role || !firstName || !lastName || !email || !password) {
         return res.status(400).json({ message: 'Role, first name, last name, email, and password are required' });
