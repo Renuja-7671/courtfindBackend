@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const courtController = require("../controllers/courtController");
 const { authenticateUser, authorizeRole } = require("../middleware/authMiddleware");
-const { uploadCourts } = require("../middleware/uploadMiddleware");
+const { uploadCourts } = require("../middleware/cloudinaryUpload");
 
 //Routes to create new court
 router.post("/upload-images", authenticateUser, authorizeRole(["Owner"]), uploadCourts.array("images"), courtController.uploadCourtImages);

@@ -18,7 +18,18 @@ const storage2 = new CloudinaryStorage({
   },
 });
 
+const storage3 = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "court-images", // Optional: folder in Cloudinary
+    allowed_formats: ["jpg", "jpeg", "png", "webp"],
+  },
+});
+
+// Multer configuration
+const uploadCourts = multer({ storage3 });
+
 const upload = multer({ storage });
 const upload2 = multer({ storage2 });
 
-module.exports = { upload, upload2 };
+module.exports = { upload, upload2, uploadCourts };

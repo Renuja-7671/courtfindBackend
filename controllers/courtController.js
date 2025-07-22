@@ -48,24 +48,31 @@ exports.createCourt = async (req, res) => {
   }
 };
 
-exports.uploadCourtImages = (req, res) => {
-    try {
-        if (!req.files ||req.files.length === 0) {
-            return res.status(400).json({ success: false, message: "No images provided."});
-        }
-    //Normalize paths: forward slashes for URLs
+
+   exports.uploadCourtImages = (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ success: false, message: "No images provided." });
+    }
+
+    // Normalize paths and prepare array of URLs
     const imageUrls = req.files.map(file => {
-        const relativePath = file.path.replace(/\\/g, "/");
-        return relativePath.replace(/\/{2,}/g, "/")
+      const relativePath = file.path.replace(/\\/g, "/");
+      return relativePath.replace(/\/{2,}/g, "/");
     });
 
-    //console.log("Uploaded image urls", imageUrls);
-    res.json({ success: true, message: "Images uploaded successfully", imageUrls });
-    }catch (error){
+    res.status(200).json({
+      success: true,
+      message: "Images uploaded successfully",
+      imageUrls
+    });
+
+    } catch (error) {
         console.error("Error uploading images:", error);
         res.status(500).json({ success: false, message: "Internal Server Error" });
     }
-};
+    };
+
 
     exports.getCourtsForBooking = async (req, res) => {
     const { courtId } = req.params;

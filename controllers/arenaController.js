@@ -69,7 +69,7 @@ exports.uploadArenaImage = async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: "No file uploaded" });
         //console.log("The uploaded file is: ", req.file);
-        const imageUrl = `/uploads/arenas/${req.file.filename}`; // relative path
+        const imageUrl = `${req.file.path}`; // relative path
         res.json({ message: "Image uploaded successfully", imageUrl });
     } catch (error) {
         res.status(500).json({ message: "Error uploading arena image", error });
