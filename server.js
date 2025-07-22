@@ -9,6 +9,11 @@ const { dir } = require('console');
 const app = express();
 
 // Middleware
+app.use(cors({
+  origin: 'https://courtfind-frontend.vercel.app',
+  credentials: true
+}));
+
 app.use(cors()); // Enable CORS
 app.use(express.json()); // JSON Parsing (No need for bodyParser.json())
 app.use(express.urlencoded({ extended: true })); // Handle form data
