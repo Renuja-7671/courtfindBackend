@@ -14,7 +14,6 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(cors()); // Enable CORS
 app.use(express.json()); // JSON Parsing (No need for bodyParser.json())
 app.use(express.urlencoded({ extended: true })); // Handle form data
 
