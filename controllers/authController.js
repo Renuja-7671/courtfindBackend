@@ -8,6 +8,8 @@ const User = require('../models/userModel');
 
 exports.register = async (req, res) => {
      const { role, firstName, lastName, mobile, country, province, zip, address, email, password, ConfirmPassword } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     return res.status(404).json({
             message: 'Unexpected error during registrationtydytdthdtydc',
             data: {
@@ -21,7 +23,8 @@ exports.register = async (req, res) => {
                 address,
                 email,
                 password,
-                ConfirmPassword
+                ConfirmPassword,
+                hashedPassword
             }
         });
 
