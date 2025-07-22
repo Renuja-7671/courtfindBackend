@@ -7,12 +7,45 @@ require("dotenv").config();
 const User = require('../models/userModel');
 
 exports.register = async (req, res) => {
-     const { role, firstName, lastName, mobile, country, province, zip, address, email, password, ConfirmPassword } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
+    try {
+        const {
+            role,
+            firstName,
+            lastName,
+            mobile,
+            country,
+            province,
+            zip,
+            address,
+            email,
+            password,
+            ConfirmPassword
+        } = req.body;
 
-    return res.status(404).json({
-            message: 'Unexpected error during registrationtydytdthdtydc',
-            data: {
+        if (!role || !firstName || !lastName || !email || !password) {
+            return res.status(400).json({
+                message: 'Role, first name, last name, email, and password are required'
+            });
+        }
+
+        // Check if user already exists
+        const existingUsers = await new Promise((resolve, reject) => {
+            User.findByEmail(email, (err, results) => {
+                if (err) reject(err);
+                else resolve(results);
+            });
+        });
+
+        if (existingUsers.length > 0) {
+            return res.status(400).json({ message: 'Email already registered' });
+        }
+
+        // Hash the password
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Create the new user
+        await new Promise((resolve, reject) => {
+            User.createUser([
                 role,
                 firstName,
                 lastName,
@@ -22,45 +55,24 @@ exports.register = async (req, res) => {
                 zip,
                 address,
                 email,
-                password,
-                ConfirmPassword,
                 hashedPassword
-            }
-        });
-
-    try { 
-       
-
-    if (!role || !firstName || !lastName || !email || !password) {
-        return res.status(400).json({ message: 'Role, first name, last name, email, and password are required' });
-    }
-    
-    try {
-        User.findByEmail(email, async (err, results) => {
-            if (err) return res.status(500).json({ message: 'Database error', error: err });
-
-            if (results.length > 0) {
-                return res.status(400).json({ message: 'Email already registered' });
-            }
-
-            const hashedPassword = await bcrypt.hash(password, 10);
-            User.createUser([role, firstName, lastName, mobile, country, province, zip, address, email, hashedPassword], (err, result) => {
-                if (err) return res.status(500).json({ message: 'Error registering user', error: err });
-
-                res.status(201).json({ message: 'User registered successfully' });
+            ], (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
             });
         });
+
+        return res.status(201).json({ message: 'User registered successfully' });
+
     } catch (error) {
-        res.status(500).json({ message: 'Internal server error' });
-    }
-    } catch (error) {
-        return res.status(404).json({
+        console.error("Registration Error:", error);
+        return res.status(500).json({
             message: 'Unexpected error during registration',
             error: error.message
         });
     }
-    
 };
+
 
 exports.login = (req, res) => {
     const { email, password } = req.body;
