@@ -40,13 +40,9 @@ exports.register = async (req, res) => {
             return res.status(400).json({ message: 'Email already registered' });
         }
 
-        const rawPassword = String(password).trim();
-        if (!rawPassword) {
-        return res.status(400).json({ message: 'Password cannot be empty' });
-        }
-        
+
         // Hash the password
-        const hashedPassword = await bcrypt.hash(rawPassword, 10);
+        //const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
         // Create the new user
         await new Promise((resolve, reject) => {
@@ -60,7 +56,7 @@ exports.register = async (req, res) => {
                 zip,
                 address,
                 email,
-                hashedPassword
+                password
             ], (err, result) => {
                 if (err) reject(err);
                 else resolve(result);
@@ -89,15 +85,15 @@ exports.login = (req, res) => {
         }
 
         if (!results || results.length === 0) {
-            return res.status(401).json({ message: "Invalid email or password" });
+            return res.status(401).json({ message: "Invalid email" });
         }
 
         const user = results[0];
 
         try {
-            const isMatch = await bcrypt.compare(password, user.password);
-            if (!isMatch) {
-                return res.status(401).json({ message: "Invalid email or password" });
+            //const isMatch = await bcrypt.compare(password, user.password);
+            if (password!==user.password) {
+                return res.status(401).json({ message: "Invalid  password" });
             }
 
             // Generate JWT with user ID and role
