@@ -40,8 +40,13 @@ exports.register = async (req, res) => {
             return res.status(400).json({ message: 'Email already registered' });
         }
 
+        const rawPassword = String(password).trim();
+        if (!rawPassword) {
+        return res.status(400).json({ message: 'Password cannot be empty' });
+        }
+        
         // Hash the password
-        const hashedPassword = await bcrypt.hash(password, 10);
+        const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
         // Create the new user
         await new Promise((resolve, reject) => {
