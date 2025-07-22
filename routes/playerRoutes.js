@@ -5,6 +5,7 @@ const bookingController = require("../controllers/bookingController");
 const invoiceController = require("../controllers/invoiceController");
 const { authenticateUser, authorizeRole } = require("../middleware/authMiddleware");
 const { uploadPlayerProfileImage } = require("../middleware/uploadMiddleware");
+const { upload } = require("../middleware/cloudinaryUpload")
 const playerReviewController = require("../controllers/playerReviewController");
 const playerInvoiceController = require("../controllers/playerInvoiceController");
 
@@ -18,7 +19,7 @@ router.post("/create-booking", authenticateUser, authorizeRole(["Player"]), book
 //routes needed for player profile
 router.get("/profile", authenticateUser, authorizeRole(["Player"]), playerController.getPlayerProfile);
 router.put("/profile", authenticateUser, authorizeRole(["Player"]), playerController.updatePlayerProfile);
-router.post("/profile/upload", authenticateUser, authorizeRole(["Player"]), uploadPlayerProfileImage.single("image"), playerController.uploadProfileImage);
+router.post("/profile/upload", authenticateUser, authorizeRole(["Player"]), upload.single("image"), playerController.uploadProfileImage);
 router.get("/profile/image", authenticateUser, authorizeRole(["Player"]), playerController.getProfileImage);
 
 //routes needed for invoices

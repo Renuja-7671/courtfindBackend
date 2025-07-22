@@ -106,7 +106,7 @@ exports.uploadProfileImage = async (req, res) => {
         if (!req.file) return res.status(400).json({ message: "No file uploaded" });
         //console.log("The came file is: ",req.file);
 
-        const imageUrl = `/uploads/player/${req.file.filename}`; // Store relative path
+        const imageUrl = `${req.file.path}`; // Store relative path
         const userId = req.user.userId; // Extract from auth token
         //console.log("The image url now is:", imageUrl);
 
