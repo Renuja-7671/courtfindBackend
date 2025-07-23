@@ -1,40 +1,110 @@
 const path = require("path");
 const PlayerBooking = require("../models/bookingModel");
 const { generateInvoicePDF } = require("../services/invoiceService");
+const { uploadPDFToCloudinary } = require("../utils/cloudinaryUpload");
+const fs = require("fs");
 
 exports.handleInvoiceGeneration = async (req, res) => {
   const { bookingId } = req.params;
 
-  PlayerBooking.getFullBookingDetails(bookingId, async (err, bookingData) => {
-    if (err || !bookingData || bookingData.length === 0) {
-      return res.status(404).json({ message: "Booking not found" });
+  console.log('=== BOOKING INVOICE GENERATION START ===');
+  console.log('Booking ID:', bookingId);
+
+  try {
+    // Step 1: Get booking details
+    const bookingData = await new Promise((resolve, reject) => {
+      PlayerBooking.getFullBookingDetails(bookingId, (err, data) => {
+        if (err || !data || data.length === 0) {
+          console.error("Booking not found:", err);
+          reject(new Error("Booking not found"));
+        } else {
+          console.log('Booking details retrieved:', data[0]);
+          resolve(data[0]);
+        }
+      });
+    });
+
+    const booking = bookingData;
+
+    // Step 2: Create temp directory and file path
+    const tempDir = path.join(__dirname, "..", "temp");
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+      console.log('Temp directory created');
     }
 
-    const booking = bookingData[0];
-    const invoicePath = `/uploads/invoices/invoice_${bookingId}.pdf`;
-    const absolutePath = path.join(__dirname, "..", invoicePath);
+    const timestamp = Date.now();
+    const localPath = path.join(tempDir, `booking_invoice_${bookingId}_${timestamp}.pdf`);
+    const fileName = `booking_invoice_${bookingId}_${timestamp}.pdf`;
 
+    // Step 3: Generate PDF
+    console.log('Generating PDF...');
+    await generateInvoicePDF(booking, localPath);
+    console.log('PDF generated successfully');
+
+    // Step 4: Verify PDF was created
+    if (!fs.existsSync(localPath)) {
+      throw new Error('PDF file was not created');
+    }
+
+    const fileSize = fs.statSync(localPath).size;
+    console.log('PDF file size:', fileSize, 'bytes');
+
+    if (fileSize === 0) {
+      throw new Error('PDF file is empty');
+    }
+
+    // Step 5: Upload to Cloudinary
+    console.log('Starting Cloudinary upload...');
+    const cloudinaryUrl = await uploadPDFToCloudinary(localPath, fileName);
+    console.log('Cloudinary upload completed:', cloudinaryUrl);
+
+    // Step 6: Clean up local file
     try {
-      await generateInvoicePDF(booking, absolutePath);
+      fs.unlinkSync(localPath);
+      console.log('Local file cleaned up');
+    } catch (deleteErr) {
+      console.warn('Could not delete local file:', deleteErr.message);
+    }
 
+    // Step 7: Update database with Cloudinary URL
+    await new Promise((resolve, reject) => {
       PlayerBooking.updateInvoiceAndPaymentStatus(
         bookingId,
-        invoicePath,
+        cloudinaryUrl, // Store the Cloudinary URL instead of local path
         (updateErr) => {
           if (updateErr) {
-            return res.status(500).json({ message: "Failed to update booking" });
+            console.error('Error updating booking:', updateErr);
+            reject(new Error("Failed to update booking"));
+          } else {
+            console.log('Booking updated with invoice URL');
+            resolve();
           }
-          setTimeout(() => {
-          res.json({ message: "Invoice generated", invoiceUrl: invoicePath });
-          }, 300);
-          console.log("Invoice generated successfully--path:", invoicePath);
         }
       );
-    } catch (pdfErr) {
-      console.error("PDF Generation Error:", pdfErr);
-      res.status(500).json({ message: "Error generating invoice" });
-    }
-  });
+    });
+
+    console.log('=== BOOKING INVOICE GENERATION SUCCESS ===');
+
+    // Return success response
+    res.json({
+      message: "Invoice generated successfully",
+      invoiceUrl: cloudinaryUrl,
+      success: true,
+      bookingId: bookingId
+    });
+
+  } catch (error) {
+    console.error('=== BOOKING INVOICE GENERATION ERROR ===');
+    console.error('Error:', error.message);
+    console.error('Stack:', error.stack);
+
+    res.status(500).json({
+      message: "Error generating or uploading invoice",
+      error: error.message,
+      success: false
+    });
+  }
 };
 
 exports.downloadInvoice = (req, res) => {

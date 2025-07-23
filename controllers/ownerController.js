@@ -448,11 +448,7 @@ exports.getPlayerBehaviorAnalysis = async (req, res) => {
     }
 };
 
-const { uploadPDFToDrive } = require("../utils/googleDrive");
-const DRIVE_FOLDER_ID = "1GxNapTLGFcUmshr3ZEjBHSVy3BW8NdJr";
-
-// Replace your generateArenaInvoice function with this:
-
+//generate arena adding invoice
 exports.generateArenaInvoice = async (req, res) => {
   const { arenaId } = req.params;
   const price = req.query.price;
