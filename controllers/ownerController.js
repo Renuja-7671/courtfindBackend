@@ -9,6 +9,12 @@ const arena = require("../models/arenaModel");
 const fs = require("fs");
 const cloudinary = require("../config/cloudinary"); 
 
+const { uploadPDFToDrive } = require("../utils/googleDrive");
+
+
+
+const DRIVE_FOLDER_ID = "1rPKA3sX-sv6SVcjQn3KCAxETvaj57VzT";
+
 exports.changePassword = async (req, res) => {
     const userId = req.user.userId;
     const { currentPassword, newPassword } = req.body;
@@ -449,14 +455,6 @@ exports.getPlayerBehaviorAnalysis = async (req, res) => {
 
 // Updated controller functions for ownerController.js
 
-const { generateArenaInvoicePDF } = require("../services/invoiceService");
-const { uploadPDFToDrive } = require("../utils/googleDrive");
-const arena = require("../models/arenaModel");
-const OwnerDashboard = require('../models/ownerModel');
-const path = require("path");
-const fs = require("fs");
-
-const DRIVE_FOLDER_ID = "1rPKA3sX-sv6SVcjQn3KCAxETvaj57VzT";
 
 exports.generateArenaInvoice = async (req, res) => {
   const { arenaId } = req.params;
