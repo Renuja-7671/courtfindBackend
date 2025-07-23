@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "courtfind-gemini",
+  "private_key_id": "74d8913ce01b5d5244dd4e525587fc3d45a349fa",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDYQQjTDo+VYqZs\nzYXYEJgogTHMfgu43XuBycaotzVQ+BIs5o2s5IUuERQleyxQtHgSeAzZG13urxdo\nhS2RwXZGvj/W2tMmXR4bAn89//KblDbvzAa5q2ioLTnnceVBS/KgLV8AGhmuSf7L\n5IdZZywKlXuI6yMr5EXGini6ae1Kt20fK3x1No5YfvK335WOOypcpH8QOMZfMoly\nbUT5zeqN+A6RhVWhQlb7Qj71RzhpYW6vFxvJxoeMiOHl1bBWPUj96L51hf4QZA8L\n6+5/l1QxKJrnUrKW0n+IAu3dCFiGbfT8r4aiLSAMD6mS7qfExyD93V6fZiC2uUvT\n9i9LdItrAgMBAAECggEADnB5zAHl0ShXCyfGOpWRpHxv5ZU6+iQ5egKN1AEbqS5P\nNqgmlkmIxh280WuUP/5rtJm1C6AQq6Lo2wFCCndb1AmPjmNqOt531X8kZpUtPMKT\nYnu4iKp9O/YPZaZxSolbCAf0FwEnI/bZliYTahVvsuITAcd6GzmnrHrdevD6boUc\nIT8Eo6UuQWjGEo6alptQUl1PbsknA/eu4C45JR1YIpdBZ1e0KlbDUbjLASqHEci6\nRkSci7TJEJNdoj9m9OMD1R8tMaSCKPDsABD5yA7qnM536RkUovIJWAci2petL894\nNBx5oE4tCThfO5ZmxWlPt+/QzrPhAFRCjiUGcR56VQKBgQD2m3kNGPM/r3N15GO5\ni6UBJLKdl0tTk/FsnYRi+Nx1UNzDVCpQLj5IOn0BvbxT9+sabiV568V+HyhSNt1U\n7o0TKrw/U7bC3V53dbVpDho25ikh+HZAePcYt3WCt2Qbw9Z2Hu1IVQyEzJVNKE94\nQxltjLh6WjcyJmYUjf22gxAQhwKBgQDgfZqqNTk0bOLzeC1am73oqwKi/a4U5Ue9\nqUpvwT1NtkICiorgFtNFNfW5U68qnEoCsaiYYkQI7PLiEYB8wDuJTaFW/U4WXwO/\notvwpWBtDSgfZ5N4y/6T5z5zveY0+diT/TJ+m5Cb866AX1gQXYHKuDSFwETKkqzH\n2o5z+AWa/QKBgG8uey3/gLPGu2x8csWVguf4DptkOa7NtXv9rFEe1+4AbfeWe5k4\nsBXKYM+nJkBJNvLsk/La7GhHTdt7JuCCyJHKo6J9cJl8SnnbVNWvaPw1WngZV98L\naoP3OoCbhAPMkGUi3mHNDl7VCb8GnIWg4tb0Kbvn7piqnT1JIwjlIBoDAoGALFB/\nHIRfI3svHdKmWVGPHoPLhHNBTvynucfWWtMxj8qfozLIEU5QLERnmkrrtCSf84Iw\nfsw/E+f6VigQThAAcK0zYSGlrYLaEZVLh2iN7VkAh5qBoQHb4kRurphY/jInz6bW\nteltlWt4Ef1APBLJUUQlkhWPPtHPa7A4GKpoKN0CgYEA8+gRVQ2U+ZELIyXG9nzr\nmbYg2eAAF5TyJxzDkgt7MyE9HEbeV/SixZsPs56T1GKI5XOeEezFyo1tAbZ55JA1\n+ybA0kW9EQmTrOy4DhS+gsXQndgYuioQEp+WYRU8q+OByIREyFrT8uwdLHDljg5A\namlQpXAuY/Aes5AtS0tC8tE=\n-----END PRIVATE KEY-----\n",
+  "client_email": "invoice-saving@courtfind-gemini.iam.gserviceaccount.com",
+  "client_id": "101388483286152148637",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/invoice-saving%40courtfind-gemini.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

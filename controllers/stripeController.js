@@ -82,7 +82,7 @@ exports.createPaymentIntent = async (req, res) => {
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
       currency: 'usd',
-      payment_method_types: ['card'], // or 'us_bank_account' for ACH
+      payment_method_types: ['card'], 
     });
 
     res.json({ clientSecret: paymentIntent.client_secret });

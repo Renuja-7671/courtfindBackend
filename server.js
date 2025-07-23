@@ -5,38 +5,45 @@ const path = require("path");
 const fs = require("fs");
 
 const routes = require("./routes");
-const { dir } = require('console');
 const app = express();
 
-// Middleware
+// Fix CORS configuration
 app.use(cors({
-  origin: '*',
-  credentials: true
+  origin: process.env.NODE_ENV === 'production' 
+    ? ['https://your-actual-vercel-url.vercel.app'] // Replace with your real Vercel URL
+    : ['http://localhost:5173', 'http://localhost:3000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use(express.json()); // JSON Parsing (No need for bodyParser.json())
-app.use(express.urlencoded({ extended: true })); // Handle form data
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-//Ensure uploads, uploads/Arenas, uploads/Courts directories exist
+// IMPORTANT: Webhook route BEFORE express.json() middleware
+app.use("/api/stripe/webhook", express.raw({ type: 'application/json' }), require("./controllers/stripeWebhookController"));
+
+// Other routes
+app.use('/api', routes);
+
+// Static file serving
 const uploadDirs = ['uploads', 'uploads/arenas', 'uploads/courts', 'uploads/player', 'uploads/invoices'];
 uploadDirs.forEach(dir => {
     const fullPath = path.join(__dirname, dir);
     if(!fs.existsSync(fullPath)){
-        fs.existsSync(fullPath,{recursive: true});
-         }
-
+        fs.mkdirSync(fullPath, {recursive: true}); // Fixed: mkdirSync instead of existsSync
+    }
 });
 
-// Static File Serving (For profile image uploads, etc.)
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/uploads/invoices", express.static(path.join(__dirname, "uploads/invoices")));
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'OK', message: 'Server is running' });
+});
 
-// Routes
-app.use('/api', routes);
-
-// Starting the server
 const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
 });

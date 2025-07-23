@@ -6,6 +6,8 @@ const OwnerDashboard = require('../models/ownerModel');
 const path = require("path");
 const { generateArenaInvoicePDF } = require("../services/invoiceService");
 const arena = require("../models/arenaModel");
+const fs = require("fs");
+const cloudinary = require("../config/cloudinary"); 
 
 exports.changePassword = async (req, res) => {
     const userId = req.user.userId;
@@ -443,44 +445,61 @@ exports.getPlayerBehaviorAnalysis = async (req, res) => {
     }
 };
 
-// Generate Invoice for Arena Addition
+const { uploadPDFToDrive } = require("../utils/googleDrive");
+const DRIVE_FOLDER_ID = "1rPKA3sX-sv6SVcjQn3KCAxETvaj57VzT";
+
 exports.generateArenaInvoice = async (req, res) => {
   const { arenaId } = req.params;
-  const price = req.query.price; 
-
+  const price = req.query.price;
 
   arena.setPriceForNewArena(arenaId, price, (err) => {
     if (err) {
-        console.error("Error setting price for new arena:", err);
-        return res.status(500).json({ message: "Failed to set price for new arena." });
-        }
-
-  arena.getArenaDetails(arenaId, async (err, arenaData) => {
-    if (err || !arenaData || arenaData.length === 0) {
-      return res.status(404).json({ message: "Arena not found" });
+      console.error("Error setting price for new arena:", err);
+      return res.status(500).json({ message: "Failed to set price for new arena." });
     }
 
-    const arenaDetails = arenaData[0];
-    const invoicePath = `/uploads/invoices/arena_invoice_${arenaId}.pdf`;
-    const absolutePath = path.join(__dirname, "..", invoicePath);
+    arena.getArenaDetails(arenaId, async (err, arenaData) => {
+      if (err || !arenaData || arenaData.length === 0) {
+        return res.status(404).json({ message: "Arena not found" });
+      }
 
-    try {
-      await generateArenaInvoicePDF(arenaDetails, absolutePath);
+      const tempDir = path.join(__dirname, "..", "temp");
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir);
+      }
 
-      arena.markAsPaid(arenaId, invoicePath, (updateErr) => {
-        if (updateErr) {
-          return res.status(500).json({ message: "Failed to update arena" });
-        }
+      const arenaDetails = arenaData[0];
+      const localPath = path.join(tempDir, `arena_invoice_${arenaId}.pdf`);
 
-        res.json({ message: "Arena invoice generated", invoiceUrl: invoicePath });
-        console.log("Arena invoice generated:", invoicePath);
-      });
-    } catch (err) {
-      console.error("PDF Generation Error:", err);
-      res.status(500).json({ message: "Error generating invoice" });
-    }
+      try {
+        // 1. Generate PDF locally
+        await generateArenaInvoicePDF(arenaDetails, localPath);
+
+        // 2. Upload to Google Drive
+        const driveUrl = await uploadPDFToDrive(
+          localPath,
+          `arena_invoice_${arenaId}.pdf`,
+          DRIVE_FOLDER_ID
+        );
+
+        // 3. Remove local file
+        fs.unlinkSync(localPath);
+
+        // 4. Save the URL to DB
+        arena.markAsPaid(arenaId, driveUrl, (updateErr) => {
+          if (updateErr) {
+            return res.status(500).json({ message: "Failed to update arena" });
+          }
+
+          res.json({ message: "Arena invoice generated", invoiceUrl: driveUrl });
+          console.log("Arena invoice uploaded to Drive:", driveUrl);
+        });
+      } catch (err) {
+        console.error("PDF Generation or Upload Error:", err);
+        res.status(500).json({ message: "Error generating or uploading invoice" });
+      }
+    });
   });
-});
 };
 
 exports.updatePaymentsTableForArenaAdd = async (req, res) => {
