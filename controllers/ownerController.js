@@ -9,6 +9,14 @@ const arena = require("../models/arenaModel");
 const fs = require("fs");
 const cloudinary = require("../config/cloudinary"); 
 
+
+const { generateArenaInvoicePDF } = require("../services/invoiceService");
+const {      } = require("../utils/cloudinaryUpload");
+const arena = require("../models/arenaModel");
+const path = require("path");
+const fs = require("fs");
+
+
 exports.changePassword = async (req, res) => {
     const userId = req.user.userId;
     const { currentPassword, newPassword } = req.body;
@@ -449,7 +457,6 @@ const { uploadPDFToDrive } = require("../utils/googleDrive");
 const DRIVE_FOLDER_ID = "1GxNapTLGFcUmshr3ZEjBHSVy3BW8NdJr";
 
 // Replace your generateArenaInvoice function with this:
-
 exports.generateArenaInvoice = async (req, res) => {
   const { arenaId } = req.params;
   const price = req.query.price;
@@ -499,7 +506,7 @@ exports.generateArenaInvoice = async (req, res) => {
 
     const timestamp = Date.now();
     const localPath = path.join(tempDir, `arena_invoice_${arenaId}_${timestamp}.pdf`);
-    console.log('PDF will be generated at:', localPath);
+    const fileName = `arena_invoice_${arenaId}_${timestamp}.pdf`;
 
     // Step 5: Generate PDF
     console.log('Generating PDF...');
@@ -518,12 +525,10 @@ exports.generateArenaInvoice = async (req, res) => {
       throw new Error('PDF file is empty');
     }
 
-    // Step 7: Upload to Google Drive
-    console.log('Starting Google Drive upload...');
-    const fileName = `arena_invoice_${arenaId}_${timestamp}.pdf`;
-    
-    const driveUrl = await uploadPDFToDrive(localPath, fileName, DRIVE_FOLDER_ID);
-    console.log('Google Drive upload completed:', driveUrl);
+    // Step 7: Upload to Cloudinary
+    console.log('Starting Cloudinary upload...');
+    const cloudinaryUrl = await uploadPDFToCloudinary(localPath, fileName);
+    console.log('Cloudinary upload completed:', cloudinaryUrl);
 
     // Step 8: Clean up local file
     try {
@@ -535,7 +540,7 @@ exports.generateArenaInvoice = async (req, res) => {
 
     // Step 9: Update database
     await new Promise((resolve, reject) => {
-      arena.markAsPaid(arenaId, driveUrl, (updateErr) => {
+      arena.markAsPaid(arenaId, cloudinaryUrl, (updateErr) => {
         if (updateErr) {
           console.error('Error marking arena as paid:', updateErr);
           reject(new Error("Failed to update arena status"));
@@ -551,7 +556,7 @@ exports.generateArenaInvoice = async (req, res) => {
     // Return success response
     res.json({
       message: "Arena invoice generated successfully",
-      invoiceUrl: driveUrl,
+      invoiceUrl: cloudinaryUrl,
       success: true,
       arenaId: arenaId,
       price: price
@@ -569,6 +574,7 @@ exports.generateArenaInvoice = async (req, res) => {
     });
   }
 };
+
 
 exports.updatePaymentsTableForArenaAdd = async (req, res) => {
   const { arenaId, total } = req.body;

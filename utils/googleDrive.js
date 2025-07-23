@@ -82,6 +82,7 @@ async function testFolderAccess(folderId) {
     return true;
   } catch (error) {
     console.error('Folder access test failed:', error.message);
+    console.error(credentials)
     return false;
   }
 }

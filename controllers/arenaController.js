@@ -131,17 +131,81 @@ exports.getArenaByRating = async (req, res) => {
     });
     };
 
-    exports.deleteArena = (req, res) => {
-    const { arenaId } = req.params;
+exports.deleteArena = (req, res) => {
+  const arenaId = req.params.arenaId;
+  console.log("Delete request received for arenaId:", arenaId);
 
-    arena.removeArena(arenaId, (err, result) => {
-        if (err) {
-        console.error("Error deleting arena:", err);
-        return res.status(500).json({ message: "Failed to delete arena." });
-        }
+  const checkCourtsQuery = "SELECT COUNT(*) AS courtCount FROM courts WHERE arenaId = ?";
+  db.query(checkCourtsQuery, [arenaId], (err, results) => {
+    if (err) {
+      console.error("Court check failed:", err);
+      return res.status(500).json({ message: "Error checking courts", error: err.message });
+    }
 
-        return res.status(200).json({ message: "Arena and associated courts deleted successfully." });
+    const courtCount = results[0].courtCount;
+    console.log("Court count:", courtCount);
+
+    if (courtCount > 0) {
+      console.log("Arena has courts. Not deleting.");
+      return res.status(400).json({ message: "Cannot delete arena. Courts still exist." });
+    }
+
+    db.beginTransaction((err) => {
+      if (err) {
+        console.error("Transaction start failed:", err);
+        return res.status(500).json({ message: "Failed to start transaction", error: err.message });
+      }
+
+      console.log("Transaction started");
+
+      const deleteQueries = [
+        { query: "DELETE FROM payments WHERE arenaId = ?", label: "payments" },
+        { query: "DELETE FROM bookings WHERE arenaId = ?", label: "bookings" },
+        { query: "DELETE FROM reviews WHERE arenaId = ?", label: "reviews" },
+        { query: "DELETE FROM arena_sports WHERE arenaId = ?", label: "arena_sports" },
+        { query: "DELETE FROM arenas WHERE arenaId = ?", label: "arenas" },
+      ];
+
+      let promiseChain = Promise.resolve();
+
+      deleteQueries.forEach(({ query, label }) => {
+        promiseChain = promiseChain.then(() => {
+          return new Promise((resolve, reject) => {
+            console.log(`Running delete on ${label}`);
+            db.query(query, [arenaId], (err) => {
+              if (err) {
+                console.error(`Delete failed for ${label}:`, err);
+                return reject(err);
+              }
+              console.log(`Deleted from ${label}`);
+              resolve();
+            });
+          });
+        });
+      });
+
+      promiseChain
+        .then(() => {
+          db.commit((err) => {
+            if (err) {
+              console.error("Commit failed:", err);
+              db.rollback(() => {
+                return res.status(500).json({ message: "Transaction commit failed", error: err.message });
+              });
+            } else {
+              console.log("Transaction committed. Arena deleted.");
+              return res.status(200).json({ message: "Arena deleted successfully." });
+            }
+          });
+        })
+        .catch((deleteErr) => {
+          console.error("Delete chain failed:", deleteErr);
+          db.rollback(() => {
+            return res.status(500).json({ message: "Delete failed", error: deleteErr.message });
+          });
+        });
     });
+  });
 };
 
 exports.getPendingArenas = (req, res) => {
