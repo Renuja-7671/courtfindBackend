@@ -21,14 +21,12 @@ try {
   console.log('Google Drive credentials loaded from service.json');
   console.log('Project ID:', credentials.project_id);
   console.log('Client Email:', credentials.client_email);
-  console.log('Private Key ID:', credentials.private_key_id);
-  console.log('Service Account Type:', credentials.type);
   
-  // Debug: Check if private key is properly formatted
+  // Fix private key formatting issues
   if (credentials.private_key) {
-    console.log('Private key starts with:', credentials.private_key.substring(0, 27));
-    console.log('Private key ends with:', credentials.private_key.substring(credentials.private_key.length - 27));
-    console.log('Private key contains newlines:', credentials.private_key.includes('\n'));
+    // Ensure proper line breaks
+    credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
+    console.log('Private key formatted properly');
   }
   
 } catch (error) {
@@ -46,8 +44,9 @@ if (missingFields.length > 0) {
 let auth, drive;
 
 try {
+  // Use the JSON file path directly instead of credentials object
   auth = new google.auth.GoogleAuth({
-    credentials: credentials,
+    keyFile: SERVICE_ACCOUNT_PATH,  // Use file path instead of credentials object
     scopes: SCOPES,
   });
 
@@ -65,19 +64,21 @@ async function testFolderAccess(folderId) {
     
     const response = await drive.files.get({
       fileId: folderId,
-      fields: 'id, name, owners, permissions'
+      fields: 'id, name'
     });
     
     console.log('Folder access test successful!');
     console.log('Folder name:', response.data.name);
-    console.log('Folder ID:', response.data.id);
     
     return true;
   } catch (error) {
     console.error('Folder access test failed!');
-    console.error('Error code:', error.code);
     console.error('Error message:', error.message);
-    console.error('Full error:', error);
+    console.error('Error details:', {
+      code: error.code,
+      status: error.status,
+      message: error.message
+    });
     return false;
   }
 }
@@ -89,26 +90,42 @@ async function uploadPDFToDrive(localPath, fileName, folderId) {
     console.log('File name:', fileName);
     console.log('Folder ID:', folderId);
     console.log('Service account email:', credentials.client_email);
-    console.log('Project ID:', credentials.project_id);
 
-    // Test authentication first
-    console.log('Testing authentication...');
-    try {
-      const authClient = await auth.getClient();
-      console.log('Authentication successful');
-      console.log('Auth client email:', authClient.email);
-    } catch (authError) {
-      console.error('Authentication failed:', authError.message);
-      console.error('Auth error details:', authError);
-      throw new Error(`Authentication failed: ${authError.message}`);
+    // Get authenticated client
+    console.log('Getting authenticated client...');
+    const authClient = await auth.getClient();
+    console.log('Authentication successful');
+
+    // Test folder access with retry
+    console.log('Testing folder access...');
+    let hasAccess = false;
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    while (!hasAccess && retryCount < maxRetries) {
+      try {
+        hasAccess = await testFolderAccess(folderId);
+        if (!hasAccess) {
+          retryCount++;
+          console.log(`Folder access failed, retry ${retryCount}/${maxRetries}`);
+          
+          if (retryCount < maxRetries) {
+            // Wait before retry
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
+      } catch (testError) {
+        retryCount++;
+        console.error(`Folder access test error (attempt ${retryCount}):`, testError.message);
+        
+        if (retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
     }
 
-    // Test folder access
-    console.log('Testing folder access...');
-    const hasAccess = await testFolderAccess(folderId);
     if (!hasAccess) {
-      console.error(`No access to folder. Make sure folder ${folderId} is shared with ${credentials.client_email}`);
-      throw new Error(`Service account doesn't have access to folder ${folderId}. Please share the folder with ${credentials.client_email}`);
+      throw new Error(`After ${maxRetries} attempts, service account still doesn't have access to folder ${folderId}. Please ensure the folder is shared with ${credentials.client_email} as Editor`);
     }
 
     // Verify file exists and get its size
@@ -137,14 +154,42 @@ async function uploadPDFToDrive(localPath, fileName, folderId) {
 
     console.log('Uploading to Google Drive...');
 
-    const response = await drive.files.create({
-      resource: fileMetadata,
-      media: media,
-      fields: "id, name, webViewLink, parents",
-    });
+    // Upload with retry logic
+    let uploadSuccess = false;
+    let uploadRetries = 0;
+    const maxUploadRetries = 3;
+    let response;
+
+    while (!uploadSuccess && uploadRetries < maxUploadRetries) {
+      try {
+        uploadRetries++;
+        console.log(`Upload attempt ${uploadRetries}/${maxUploadRetries}`);
+
+        response = await drive.files.create({
+          resource: fileMetadata,
+          media: media,
+          fields: "id, name, webViewLink, parents",
+        });
+
+        uploadSuccess = true;
+        console.log('File uploaded successfully with ID:', response.data.id);
+
+      } catch (uploadError) {
+        console.error(`Upload attempt ${uploadRetries} failed:`, uploadError.message);
+        
+        if (uploadRetries < maxUploadRetries) {
+          console.log(`Retrying upload in 3 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          // Reset the file stream for retry
+          media.body = fs.createReadStream(localPath);
+        } else {
+          throw uploadError;
+        }
+      }
+    }
 
     const fileId = response.data.id;
-    console.log('File uploaded successfully with ID:', fileId);
 
     // Make the file publicly readable
     console.log('Setting file permissions...');
@@ -172,15 +217,14 @@ async function uploadPDFToDrive(localPath, fileName, folderId) {
   } catch (error) {
     console.error('=== GOOGLE DRIVE UPLOAD ERROR ===');
     console.error('Error details:', error.message);
-    console.error('Error code:', error.code);
-    console.error('Error status:', error.status);
-    console.error('Full error:', error);
     
     // Provide more specific error messages
     if (error.message.includes('invalid_grant') || error.message.includes('Invalid JWT')) {
-      throw new Error(`Authentication failed - Invalid JWT signature. Check if service.json contains the correct private key.`);
+      throw new Error(`Authentication failed - Service account credentials are invalid. Please check your service.json file or recreate the service account.`);
     } else if (error.message.includes('access') || error.message.includes('permission')) {
-      throw new Error(`Access denied. Share the folder ${folderId} with ${credentials.client_email} as Editor`);
+      throw new Error(`Access denied. Make sure folder ${folderId} is shared with ${credentials.client_email} as Editor. Go to Google Drive, right-click the folder, click Share, and add this email.`);
+    } else if (error.message.includes('quota')) {
+      throw new Error('Google Drive quota exceeded. Try again later.');
     } else {
       throw new Error(`Google Drive upload failed: ${error.message}`);
     }
