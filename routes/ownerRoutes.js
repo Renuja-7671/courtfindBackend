@@ -54,13 +54,7 @@ router.get('/activity-summary', authenticateUser, authorizeRole(["Owner"]), logi
 router.get('/login-times', authenticateUser, authorizeRole(["Owner"]), loginActivityController.getLoginTimes);
 router.post('/add-login-record', authenticateUser, authorizeRole(["Owner"]), loginActivityController.addLoginRecord);
 
-router.post('/update-payments-table', authenticateUser, authorizeRole(["Owner"]), ownerController.updatePaymentsTableForArenaAdd);
-router.get('/generate-arena-invoice/:arenaId', authenticateUser, authorizeRole(["Owner"]), ownerController.generateArenaInvoice);
-router.get('/test', (req, res) => {
-    res.json({ 
-        message: 'Owner routes working',
-        timestamp: new Date().toISOString(),
-        user: req.user || 'No user info'
-    });
-});
+router.get('/generate-arena-invoice/:arenaId', ownerController.generateArenaInvoice);
+router.post('/update-payments-table-for-arena-add', authenticateUser, authorizeRole(["Owner"]), ownerController.updatePaymentsTableForArenaAdd);
+
 module.exports = router;

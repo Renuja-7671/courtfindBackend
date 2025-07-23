@@ -9,12 +9,6 @@ const arena = require("../models/arenaModel");
 const fs = require("fs");
 const cloudinary = require("../config/cloudinary"); 
 
-const { uploadPDFToDrive } = require("../utils/googleDrive");
-
-
-
-const DRIVE_FOLDER_ID = "1rPKA3sX-sv6SVcjQn3KCAxETvaj57VzT";
-
 exports.changePassword = async (req, res) => {
     const userId = req.user.userId;
     const { currentPassword, newPassword } = req.body;
@@ -451,187 +445,81 @@ exports.getPlayerBehaviorAnalysis = async (req, res) => {
     }
 };
 
-// Add this to your ownerController.js
-
-// Updated controller functions for ownerController.js
-
+const { uploadPDFToDrive } = require("../utils/googleDrive");
+const DRIVE_FOLDER_ID = "1rPKA3sX-sv6SVcjQn3KCAxETvaj57VzT";
 
 exports.generateArenaInvoice = async (req, res) => {
   const { arenaId } = req.params;
   const price = req.query.price;
 
-  console.log('=== GENERATE ARENA INVOICE START ===');
-  console.log('Arena ID:', arenaId);
-  console.log('Price:', price);
-  console.log('User:', req.user);
-
-  // Validate inputs
-  if (!arenaId || !price) {
-    return res.status(400).json({ 
-      success: false,
-      message: "Arena ID and price are required" 
-    });
-  }
-
-  try {
-    // Step 1: Set price for arena
-    console.log('Step 1: Setting price for arena...');
-    await new Promise((resolve, reject) => {
-      arena.setPriceForNewArena(arenaId, price, (err) => {
-        if (err) {
-          console.error("Error setting price:", err);
-          reject(new Error(`Failed to set price: ${err.message}`));
-        } else {
-          console.log('Price set successfully');
-          resolve();
-        }
-      });
-    });
-
-    // Step 2: Get arena details
-    console.log('Step 2: Getting arena details...');
-    const arenaData = await new Promise((resolve, reject) => {
-      arena.getArenaDetails(arenaId, (err, data) => {
-        if (err) {
-          console.error("Database error getting arena:", err);
-          reject(new Error(`Database error: ${err.message}`));
-        } else if (!data || data.length === 0) {
-          console.error("Arena not found");
-          reject(new Error("Arena not found"));
-        } else {
-          console.log('Arena details retrieved:', data[0]);
-          resolve(data[0]);
-        }
-      });
-    });
-
-    // Add price and amount to arena data for invoice
-    arenaData.price = price;
-    arenaData.amount = price;
-
-    // Step 3: Create temp directory and generate PDF
-    console.log('Step 3: Creating PDF...');
-    const tempDir = path.join(__dirname, "..", "temp");
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-      console.log('Temp directory created');
+  arena.setPriceForNewArena(arenaId, price, (err) => {
+    if (err) {
+      console.error("Error setting price for new arena:", err);
+      return res.status(500).json({ message: "Failed to set price for new arena." });
     }
 
-    const timestamp = Date.now();
-    const localPath = path.join(tempDir, `arena_invoice_${arenaId}_${timestamp}.pdf`);
-    console.log('PDF will be saved to:', localPath);
+    arena.getArenaDetails(arenaId, async (err, arenaData) => {
+      if (err || !arenaData || arenaData.length === 0) {
+        return res.status(404).json({ message: "Arena not found" });
+      }
 
-    // Generate PDF
-    await generateArenaInvoicePDF(arenaData, localPath);
-    console.log('PDF generated successfully');
+      const tempDir = path.join(__dirname, "..", "temp");
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir);
+      }
 
-    // Verify file exists
-    if (!fs.existsSync(localPath)) {
-      throw new Error('PDF file was not created successfully');
-    }
+      const arenaDetails = arenaData[0];
+      const localPath = path.join(tempDir, `arena_invoice_${arenaId}.pdf`);
 
-    const fileSize = fs.statSync(localPath).size;
-    console.log('PDF file size:', fileSize, 'bytes');
+      try {
+        // 1. Generate PDF locally
+        await generateArenaInvoicePDF(arenaDetails, localPath);
 
-    // Step 4: Upload to Google Drive
-    console.log('Step 4: Uploading to Google Drive...');
-    const fileName = `arena_invoice_${arenaId}_${timestamp}.pdf`;
-    const driveUrl = await uploadPDFToDrive(localPath, fileName, DRIVE_FOLDER_ID);
-    console.log('Uploaded to Drive successfully:', driveUrl);
+        // 2. Upload to Google Drive
+        const driveUrl = await uploadPDFToDrive(
+          localPath,
+          `arena_invoice_${arenaId}.pdf`,
+          DRIVE_FOLDER_ID
+        );
 
-    // Step 5: Clean up local file
-    try {
-      fs.unlinkSync(localPath);
-      console.log('Local file cleaned up');
-    } catch (cleanupErr) {
-      console.warn('Failed to clean up local file:', cleanupErr.message);
-    }
+        // 3. Remove local file
+        fs.unlinkSync(localPath);
 
-    // Step 6: Mark arena as paid
-    console.log('Step 5: Marking arena as paid...');
-    await new Promise((resolve, reject) => {
-      arena.markAsPaid(arenaId, driveUrl, (updateErr) => {
-        if (updateErr) {
-          console.error("Error marking arena as paid:", updateErr);
-          reject(new Error(`Failed to update arena status: ${updateErr.message}`));
-        } else {
-          console.log('Arena marked as paid successfully');
-          resolve();
-        }
-      });
+        // 4. Save the URL to DB
+        arena.markAsPaid(arenaId, driveUrl, (updateErr) => {
+          if (updateErr) {
+            return res.status(500).json({ message: "Failed to update arena" });
+          }
+
+          res.json({ message: "Arena invoice generated", invoiceUrl: driveUrl });
+          console.log("Arena invoice uploaded to Drive:", driveUrl);
+        });
+      } catch (err) {
+        console.error("PDF Generation or Upload Error:", err);
+        res.status(500).json({ message: "Error generating or uploading invoice" });
+      }
     });
-
-    console.log('=== GENERATE ARENA INVOICE SUCCESS ===');
-
-    // Return success response
-    res.json({ 
-      success: true,
-      message: "Arena invoice generated successfully", 
-      invoiceUrl: driveUrl,
-      arenaId: arenaId,
-      price: price
-    });
-
-  } catch (error) {
-    console.error("=== GENERATE ARENA INVOICE ERROR ===");
-    console.error("Error details:", error);
-    
-    res.status(500).json({ 
-      success: false,
-      message: "Error generating invoice", 
-      error: error.message 
-    });
-  }
+  });
 };
-
 exports.updatePaymentsTableForArenaAdd = async (req, res) => {
   const { arenaId, total } = req.body;
   const ownerId = req.user.userId;
 
-  console.log('=== UPDATE PAYMENTS TABLE START ===');
-  console.log('Arena ID:', arenaId);
-  console.log('Total:', total);
-  console.log('Owner ID:', ownerId);
-
-  // Validate inputs
-  if (!arenaId || !total || !ownerId) {
-    return res.status(400).json({ 
-      success: false,
-      message: "Arena ID, total amount, and owner ID are required" 
-    });
+  if (!arenaId || !total) {
+    return res.status(400).json({ message: "Arena ID and total amount are required" });
   }
 
   const paymentDesc = `Payment for arena addition: ${arenaId}`;
   const payment_method = "Stripe";
 
   try {
-    const response = await OwnerDashboard.updatePaymentsTableForArenaAdd(
-      arenaId, 
-      total, 
-      ownerId, 
-      paymentDesc, 
-      payment_method
-    );
-    
-    console.log('Payment table updated successfully:', response);
-    console.log('=== UPDATE PAYMENTS TABLE SUCCESS ===');
-    
-    res.json({ 
-      success: true,
-      message: "Payment status updated successfully", 
-      data: response 
-    });
+    const response = await OwnerDashboard.updatePaymentsTableForArenaAdd(arenaId, total, ownerId, paymentDesc, payment_method);
+    res.json({ message: "Payment status updated successfully", data: response });
   } catch (error) {
-    console.error("=== UPDATE PAYMENTS TABLE ERROR ===");
     console.error("Error updating payment status:", error);
-    
-    res.status(500).json({ 
-      success: false,
-      message: "Failed to update payment status", 
-      error: error.message 
-    });
+    res.status(500).json({ message: "Failed to update payment status", error });
   }
-};
+}
 
 const ownerModel = require('../models/ownerModel');
 
