@@ -10,7 +10,7 @@ const app = express();
 // Fix CORS configuration
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://your-actual-vercel-url.vercel.app'] // Replace with your real Vercel URL
+    ? ['*'] // Replace with your real Vercel URL
     : ['http://localhost:5173', 'http://localhost:3000'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
