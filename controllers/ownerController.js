@@ -8,11 +8,7 @@ const { generateArenaInvoicePDF } = require("../services/invoiceService");
 const arena = require("../models/arenaModel");
 const fs = require("fs");
 const cloudinary = require("../config/cloudinary"); 
-
-
-const { generateArenaInvoicePDF } = require("../services/invoiceService");
-const {      } = require("../utils/cloudinaryUpload");
-const arena = require("../models/arenaModel");
+const { uploadPDFToCloudinary } = require("../utils/cloudinaryUpload");
 const path = require("path");
 const fs = require("fs");
 
@@ -457,6 +453,7 @@ const { uploadPDFToDrive } = require("../utils/googleDrive");
 const DRIVE_FOLDER_ID = "1GxNapTLGFcUmshr3ZEjBHSVy3BW8NdJr";
 
 // Replace your generateArenaInvoice function with this:
+
 exports.generateArenaInvoice = async (req, res) => {
   const { arenaId } = req.params;
   const price = req.query.price;
