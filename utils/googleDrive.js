@@ -1,39 +1,43 @@
-// utils/googleDrive.js - Fixed version
+// utils/googleDrive.js - Using environment variables
 
 const fs = require("fs");
 const path = require("path");
 const { google } = require("googleapis");
 
-// Try multiple possible paths for the credentials file
-const possiblePaths = [
-  path.join(__dirname, "..", "courtfind-gemini-74d8913ce01b.json"),
-  path.join(__dirname, "..", "config", "courtfind-gemini-74d8913ce01b.json"),
-  path.join(process.cwd(), "courtfind-gemini-74d8913ce01b.json")
-];
-
-let KEYFILEPATH = null;
-
-// Find the credentials file
-for (const filePath of possiblePaths) {
-  if (fs.existsSync(filePath)) {
-    KEYFILEPATH = filePath;
-    console.log('Found Google credentials at:', KEYFILEPATH);
-    break;
-  }
-}
-
-if (!KEYFILEPATH) {
-  console.error('Google credentials file not found. Checked paths:', possiblePaths);
-  throw new Error('Google credentials file not found');
-}
-
 const SCOPES = ["https://www.googleapis.com/auth/drive"];
+
+// Create credentials object from environment variables
+const credentials = {
+  type: "service_account",
+  project_id: process.env.GOOGLE_PROJECT_ID,
+  private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
+  private_key: process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n') : null,
+  client_email: process.env.GOOGLE_CLIENT_EMAIL,
+  client_id: process.env.GOOGLE_CLIENT_ID,
+  auth_uri: "https://accounts.google.com/o/oauth2/auth",
+  token_uri: "https://oauth2.googleapis.com/token",
+  auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
+  client_x509_cert_url: process.env.GOOGLE_CLIENT_X509_CERT_URL,
+  universe_domain: "googleapis.com"
+};
+
+console.log('Google Drive credentials loaded from environment variables');
+console.log('Project ID:', credentials.project_id);
+console.log('Client Email:', credentials.client_email);
+
+// Validate required environment variables
+const requiredVars = ['GOOGLE_PROJECT_ID', 'GOOGLE_PRIVATE_KEY', 'GOOGLE_CLIENT_EMAIL'];
+const missingVars = requiredVars.filter(varName => !process.env[varName]);
+
+if (missingVars.length > 0) {
+  throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
+}
 
 let auth, drive;
 
 try {
   auth = new google.auth.GoogleAuth({
-    keyFile: KEYFILEPATH,
+    credentials: credentials,
     scopes: SCOPES,
   });
 
@@ -109,11 +113,10 @@ async function uploadPDFToDrive(localPath, fileName, folderId) {
   } catch (error) {
     console.error('=== GOOGLE DRIVE UPLOAD ERROR ===');
     console.error('Error details:', error.message);
-    console.error('Stack:', error.stack);
     
     // Provide more specific error messages
     if (error.message.includes('Auth')) {
-      throw new Error('Google Drive authentication failed. Check your credentials file.');
+      throw new Error('Google Drive authentication failed. Check your environment variables.');
     } else if (error.message.includes('quota')) {
       throw new Error('Google Drive quota exceeded. Try again later.');
     } else if (error.message.includes('permission')) {
