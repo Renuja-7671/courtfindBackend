@@ -1,66 +1,52 @@
-// utils/googleDrive.js - Fixed private key handling
-
 const fs = require("fs");
+const path = require("path");
 const { google } = require("googleapis");
 
 const SCOPES = ["https://www.googleapis.com/auth/drive.file"];
 
-// Fix private key formatting
-function fixPrivateKey(privateKey) {
-  if (!privateKey) return null;
+// Load credentials from service.json file
+const SERVICE_ACCOUNT_PATH = path.join(__dirname, "..", "service.json");
+
+console.log('Looking for service account file at:', SERVICE_ACCOUNT_PATH);
+
+// Check if service.json file exists
+if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
+  throw new Error(`Service account file not found at: ${SERVICE_ACCOUNT_PATH}`);
+}
+
+let credentials;
+try {
+  const credentialsFile = fs.readFileSync(SERVICE_ACCOUNT_PATH, 'utf8');
+  credentials = JSON.parse(credentialsFile);
+  console.log('Google Drive credentials loaded from service.json');
+  console.log('Project ID:', credentials.project_id);
+  console.log('Client Email:', credentials.client_email);
   
-  // Replace escaped newlines with actual newlines
-  let fixedKey = privateKey.replace(/\\n/g, '\n');
-  
-  // Ensure proper formatting
-  if (!fixedKey.includes('-----BEGIN PRIVATE KEY-----')) {
-    console.error('Private key format is incorrect');
-    return null;
+  // Fix private key formatting issues
+  if (credentials.private_key) {
+    // Ensure proper line breaks
+    credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
+    console.log('Private key formatted properly');
   }
   
-  // Remove extra quotes if present
-  fixedKey = fixedKey.replace(/^"/, '').replace(/"$/, '');
-  
-  return fixedKey;
+} catch (error) {
+  throw new Error(`Failed to load or parse service.json: ${error.message}`);
 }
 
-// Create credentials object from environment variables
-const credentials = {
-  type: "service_account",
-  project_id: process.env.GOOGLE_PROJECT_ID,
-  private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
-  private_key: fixPrivateKey(process.env.GOOGLE_PRIVATE_KEY),
-  client_email: process.env.GOOGLE_CLIENT_EMAIL,
-  client_id: process.env.GOOGLE_CLIENT_ID,
-  auth_uri: "https://accounts.google.com/o/oauth2/auth",
-  token_uri: "https://oauth2.googleapis.com/token",
-  auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
-  client_x509_cert_url: process.env.GOOGLE_CLIENT_X509_CERT_URL,
-  universe_domain: "googleapis.com"
-};
+// Validate required fields in the JSON file
+const requiredFields = ['type', 'project_id', 'private_key', 'client_email'];
+const missingFields = requiredFields.filter(field => !credentials[field]);
 
-console.log('Google Drive credentials loaded from environment variables');
-console.log('Project ID:', credentials.project_id);
-console.log('Client Email:', credentials.client_email);
-console.log('Private key starts with:', credentials.private_key ? credentials.private_key.substring(0, 50) + '...' : 'NULL');
-
-// Validate required environment variables
-const requiredVars = ['GOOGLE_PROJECT_ID', 'GOOGLE_PRIVATE_KEY', 'GOOGLE_CLIENT_EMAIL'];
-const missingVars = requiredVars.filter(varName => !process.env[varName]);
-
-if (missingVars.length > 0) {
-  throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
-}
-
-if (!credentials.private_key) {
-  throw new Error('GOOGLE_PRIVATE_KEY is not properly formatted');
+if (missingFields.length > 0) {
+  throw new Error(`Missing required fields in service.json: ${missingFields.join(', ')}`);
 }
 
 let auth, drive;
 
 try {
+  // Use the JSON file path directly instead of credentials object
   auth = new google.auth.GoogleAuth({
-    credentials: credentials,
+    keyFile: SERVICE_ACCOUNT_PATH,  // Use file path instead of credentials object
     scopes: SCOPES,
   });
 
@@ -74,15 +60,25 @@ try {
 // Test function to check if service account can access the folder
 async function testFolderAccess(folderId) {
   try {
+    console.log(`Testing access to folder ${folderId} with service account ${credentials.client_email}`);
+    
     const response = await drive.files.get({
       fileId: folderId,
       fields: 'id, name'
     });
-    console.log('Folder access test successful:', response.data.name);
+    
+    console.log('Folder access test successful!');
+    console.log('Folder name:', response.data.name);
+    
     return true;
   } catch (error) {
-    console.error('Folder access test failed:', error.message);
-    console.error(credentials)
+    console.error('Folder access test failed!');
+    console.error('Error message:', error.message);
+    console.error('Error details:', {
+      code: error.code,
+      status: error.status,
+      message: error.message
+    });
     return false;
   }
 }
@@ -95,21 +91,41 @@ async function uploadPDFToDrive(localPath, fileName, folderId) {
     console.log('Folder ID:', folderId);
     console.log('Service account email:', credentials.client_email);
 
-    // Test authentication first
-    console.log('Testing authentication...');
-    try {
-      const authClient = await auth.getClient();
-      console.log('Authentication successful');
-    } catch (authError) {
-      console.error('Authentication failed:', authError.message);
-      throw new Error(`Authentication failed: ${authError.message}`);
+    // Get authenticated client
+    console.log('Getting authenticated client...');
+    const authClient = await auth.getClient();
+    console.log('Authentication successful');
+
+    // Test folder access with retry
+    console.log('Testing folder access...');
+    let hasAccess = false;
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    while (!hasAccess && retryCount < maxRetries) {
+      try {
+        hasAccess = await testFolderAccess(folderId);
+        if (!hasAccess) {
+          retryCount++;
+          console.log(`Folder access failed, retry ${retryCount}/${maxRetries}`);
+          
+          if (retryCount < maxRetries) {
+            // Wait before retry
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
+      } catch (testError) {
+        retryCount++;
+        console.error(`Folder access test error (attempt ${retryCount}):`, testError.message);
+        
+        if (retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
     }
 
-    // Test folder access
-    console.log('Testing folder access...');
-    const hasAccess = await testFolderAccess(folderId);
     if (!hasAccess) {
-      throw new Error(`Service account doesn't have access to folder ${folderId}. Please share the folder with ${credentials.client_email}`);
+      throw new Error(`After ${maxRetries} attempts, service account still doesn't have access to folder ${folderId}. Please ensure the folder is shared with ${credentials.client_email} as Editor`);
     }
 
     // Verify file exists and get its size
@@ -138,77 +154,77 @@ async function uploadPDFToDrive(localPath, fileName, folderId) {
 
     console.log('Uploading to Google Drive...');
 
-    // Upload file with retry logic
-    let uploadAttempts = 0;
-    const maxAttempts = 3;
-    
-    while (uploadAttempts < maxAttempts) {
+    // Upload with retry logic
+    let uploadSuccess = false;
+    let uploadRetries = 0;
+    const maxUploadRetries = 3;
+    let response;
+
+    while (!uploadSuccess && uploadRetries < maxUploadRetries) {
       try {
-        uploadAttempts++;
-        console.log(`Upload attempt ${uploadAttempts}/${maxAttempts}`);
-        
-        const response = await drive.files.create({
+        uploadRetries++;
+        console.log(`Upload attempt ${uploadRetries}/${maxUploadRetries}`);
+
+        response = await drive.files.create({
           resource: fileMetadata,
           media: media,
           fields: "id, name, webViewLink, parents",
         });
 
-        const fileId = response.data.id;
-        console.log('File uploaded successfully with ID:', fileId);
+        uploadSuccess = true;
+        console.log('File uploaded successfully with ID:', response.data.id);
 
-        // Make the file publicly readable
-        console.log('Setting file permissions...');
-        try {
-          await drive.permissions.create({
-            fileId: fileId,
-            requestBody: {
-              role: "reader",
-              type: "anyone",
-            },
-          });
-          console.log('File permissions set to public successfully');
-        } catch (permError) {
-          console.warn('Could not set public permissions:', permError.message);
-          console.log('File will be accessible to folder members only');
-        }
-
-        // Generate viewable URL
-        const viewUrl = `https://drive.google.com/file/d/${fileId}/view`;
-        console.log('File available at:', viewUrl);
-        console.log('=== GOOGLE DRIVE UPLOAD SUCCESS ===');
-
-        return viewUrl;
-        
       } catch (uploadError) {
-        console.error(`Upload attempt ${uploadAttempts} failed:`, uploadError.message);
+        console.error(`Upload attempt ${uploadRetries} failed:`, uploadError.message);
         
-        if (uploadAttempts >= maxAttempts) {
+        if (uploadRetries < maxUploadRetries) {
+          console.log(`Retrying upload in 3 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          // Reset the file stream for retry
+          media.body = fs.createReadStream(localPath);
+        } else {
           throw uploadError;
         }
-        
-        // Wait before retry
-        await new Promise(resolve => setTimeout(resolve, 1000 * uploadAttempts));
       }
     }
+
+    const fileId = response.data.id;
+
+    // Make the file publicly readable
+    console.log('Setting file permissions...');
+    try {
+      await drive.permissions.create({
+        fileId: fileId,
+        requestBody: {
+          role: "reader",
+          type: "anyone",
+        },
+      });
+      console.log('File permissions set to public successfully');
+    } catch (permError) {
+      console.warn('Could not set public permissions:', permError.message);
+      console.log('File will be accessible to folder members only');
+    }
+
+    // Generate viewable URL
+    const viewUrl = `https://drive.google.com/file/d/${fileId}/view`;
+    console.log('File available at:', viewUrl);
+    console.log('=== GOOGLE DRIVE UPLOAD SUCCESS ===');
+
+    return viewUrl;
 
   } catch (error) {
     console.error('=== GOOGLE DRIVE UPLOAD ERROR ===');
     console.error('Error details:', error.message);
-    console.error('Error stack:', error.stack);
     
     // Provide more specific error messages
-    if (error.message.includes('DECODER') || error.message.includes('unsupported')) {
-      throw new Error('Private key format error. Check your GOOGLE_PRIVATE_KEY environment variable format.');
-    } else if (error.message.includes('storage quota')) {
-      throw new Error(`Google Drive storage quota issue. Make sure to share a folder from your personal Drive with ${credentials.client_email}`);
-    } else if (error.message.includes('access')) {
-      throw new Error(`Access denied. Share the folder ${folderId} with ${credentials.client_email} as Editor`);
-    } else if (error.message.includes('Auth')) {
-      throw new Error('Google Drive authentication failed. Check your environment variables.');
+    if (error.message.includes('invalid_grant') || error.message.includes('Invalid JWT')) {
+      throw new Error(`Authentication failed - Service account credentials are invalid. Please check your service.json file or recreate the service account.`);
+    } else if (error.message.includes('access') || error.message.includes('permission')) {
+      throw new Error(`Access denied. Make sure folder ${folderId} is shared with ${credentials.client_email} as Editor. Go to Google Drive, right-click the folder, click Share, and add this email.`);
     } else if (error.message.includes('quota')) {
       throw new Error('Google Drive quota exceeded. Try again later.');
-    } else if (error.message.includes('permission')) {
-      throw new Error('Permission denied. Check folder ID and service account permissions.');
     } else {
       throw new Error(`Google Drive upload failed: ${error.message}`);
     }
