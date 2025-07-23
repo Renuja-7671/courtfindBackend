@@ -9,8 +9,7 @@ const arena = require("../models/arenaModel");
 const fs = require("fs");
 const cloudinary = require("../config/cloudinary"); 
 const { uploadPDFToCloudinary } = require("../utils/cloudinaryUpload");
-const path = require("path");
-const fs = require("fs");
+
 
 
 exports.changePassword = async (req, res) => {
