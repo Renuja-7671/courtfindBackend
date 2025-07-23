@@ -1,5 +1,3 @@
-// services/invoiceService.js - Replace with Puppeteer
-
 const ejs = require("ejs");
 const path = require("path");
 const puppeteer = require("puppeteer");
@@ -16,6 +14,7 @@ exports.generateInvoicePDF = async (bookingData, outputPath) => {
 
   let browser;
   try {
+    console.log('Launching Puppeteer for invoice PDF...');
     browser = await puppeteer.launch({
       headless: true,
       args: [
@@ -41,7 +40,7 @@ exports.generateInvoicePDF = async (bookingData, outputPath) => {
       }
     });
 
-    console.log('PDF created successfully with Puppeteer:', outputPath);
+    console.log('Invoice PDF created successfully:', outputPath);
     return outputPath;
 
   } finally {
@@ -54,67 +53,81 @@ exports.generateInvoicePDF = async (bookingData, outputPath) => {
 exports.generateArenaInvoicePDF = async (arenaData, outputPath) => {
   const templatePath = path.join(__dirname, "../views/arenaInvoiceTemplate.ejs");
   
-  console.log('Looking for template at:', templatePath);
+  console.log('=== PUPPETEER PDF GENERATION START ===');
+  console.log('Template path:', templatePath);
+  console.log('Output path:', outputPath);
+  console.log('Arena data:', arenaData);
   
   if (!fs.existsSync(templatePath)) {
     console.error(`Arena invoice template not found at: ${templatePath}`);
     throw new Error(`Arena invoice template not found at: ${templatePath}`);
   }
 
-  console.log('Arena data for template:', arenaData);
-
+  let browser;
   try {
+    // Render HTML from template
+    console.log('Rendering EJS template...');
     const html = await ejs.renderFile(templatePath, { arena: arenaData });
-    console.log('HTML template rendered successfully');
+    console.log('EJS template rendered successfully');
 
-    let browser;
-    try {
-      console.log('Launching Puppeteer browser...');
-      browser = await puppeteer.launch({
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--disable-web-security',
-          '--disable-features=VizDisplayCompositor'
-        ]
-      });
+    // Launch Puppeteer
+    console.log('Launching Puppeteer browser...');
+    browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor'
+      ]
+    });
+    console.log('Puppeteer browser launched successfully');
 
-      const page = await browser.newPage();
-      console.log('Setting page content...');
-      
-      await page.setContent(html, { 
-        waitUntil: 'networkidle0',
-        timeout: 30000 
-      });
+    // Create new page and set content
+    const page = await browser.newPage();
+    console.log('Setting page content...');
+    
+    await page.setContent(html, { 
+      waitUntil: 'networkidle0',
+      timeout: 30000 
+    });
+    console.log('Page content set successfully');
 
-      console.log('Generating PDF...');
-      await page.pdf({
-        path: outputPath,
-        format: 'A4',
-        printBackground: true,
-        margin: {
-          top: '0.5in',
-          right: '0.5in',
-          bottom: '0.5in',
-          left: '0.5in'
-        }
-      });
-
-      console.log('PDF created successfully with Puppeteer:', outputPath);
-      return outputPath;
-
-    } finally {
-      if (browser) {
-        await browser.close();
-        console.log('Browser closed');
+    // Generate PDF
+    console.log('Generating PDF...');
+    await page.pdf({
+      path: outputPath,
+      format: 'A4',
+      printBackground: true,
+      margin: {
+        top: '0.5in',
+        right: '0.5in',
+        bottom: '0.5in',
+        left: '0.5in'
       }
+    });
+
+    console.log('=== PUPPETEER PDF GENERATION SUCCESS ===');
+    console.log('PDF created at:', outputPath);
+    
+    // Verify file was created
+    if (fs.existsSync(outputPath)) {
+      const stats = fs.statSync(outputPath);
+      console.log('PDF file size:', stats.size, 'bytes');
     }
 
+    return outputPath;
+
   } catch (error) {
-    console.error('Error in generateArenaInvoicePDF:', error);
+    console.error('=== PUPPETEER PDF GENERATION ERROR ===');
+    console.error('Error details:', error);
     throw error;
+  } finally {
+    if (browser) {
+      await browser.close();
+      console.log('Puppeteer browser closed');
+    }
   }
 };
