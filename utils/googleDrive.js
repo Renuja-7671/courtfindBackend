@@ -1,59 +1,36 @@
-// utils/googleDrive.js - Fixed private key handling
-
 const fs = require("fs");
+const path = require("path");
 const { google } = require("googleapis");
 
 const SCOPES = ["https://www.googleapis.com/auth/drive.file"];
 
-// Fix private key formatting
-function fixPrivateKey(privateKey) {
-  if (!privateKey) return null;
-  
-  // Replace escaped newlines with actual newlines
-  let fixedKey = privateKey.replace(/\\n/g, '\n');
-  
-  // Ensure proper formatting
-  if (!fixedKey.includes('-----BEGIN PRIVATE KEY-----')) {
-    console.error('Private key format is incorrect');
-    return null;
-  }
-  
-  // Remove extra quotes if present
-  fixedKey = fixedKey.replace(/^"/, '').replace(/"$/, '');
-  
-  return fixedKey;
+// Load credentials from service.json file
+const SERVICE_ACCOUNT_PATH = path.join(__dirname, "..", "service.json");
+
+console.log('Looking for service account file at:', SERVICE_ACCOUNT_PATH);
+
+// Check if service.json file exists
+if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
+  throw new Error(`Service account file not found at: ${SERVICE_ACCOUNT_PATH}`);
 }
 
-// Create credentials object from environment variables
-const credentials = {
-  type: "service_account",
-  project_id: process.env.GOOGLE_PROJECT_ID,
-  private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
-  private_key: fixPrivateKey(process.env.GOOGLE_PRIVATE_KEY),
-  client_email: process.env.GOOGLE_CLIENT_EMAIL,
-  client_id: process.env.GOOGLE_CLIENT_ID,
-  auth_uri: "https://accounts.google.com/o/oauth2/auth",
-  token_uri: "https://oauth2.googleapis.com/token",
-  auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
-  client_x509_cert_url: process.env.GOOGLE_CLIENT_X509_CERT_URL,
-  universe_domain: "googleapis.com"
-};
-
-console.log('Google Drive credentials loaded from environment variables');
-console.log('Project ID:', credentials.project_id);
-console.log('Client Email:', credentials.client_email);
-console.log('Private key starts with:', credentials.private_key ? credentials.private_key.substring(0, 50) + '...' : 'NULL');
-
-// Validate required environment variables
-const requiredVars = ['GOOGLE_PROJECT_ID', 'GOOGLE_PRIVATE_KEY', 'GOOGLE_CLIENT_EMAIL'];
-const missingVars = requiredVars.filter(varName => !process.env[varName]);
-
-if (missingVars.length > 0) {
-  throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
+let credentials;
+try {
+  const credentialsFile = fs.readFileSync(SERVICE_ACCOUNT_PATH, 'utf8');
+  credentials = JSON.parse(credentialsFile);
+  console.log('Google Drive credentials loaded from service.json');
+  console.log('Project ID:', credentials.project_id);
+  console.log('Client Email:', credentials.client_email);
+} catch (error) {
+  throw new Error(`Failed to load or parse service.json: ${error.message}`);
 }
 
-if (!credentials.private_key) {
-  throw new Error('GOOGLE_PRIVATE_KEY is not properly formatted');
+// Validate required fields in the JSON file
+const requiredFields = ['type', 'project_id', 'private_key', 'client_email'];
+const missingFields = requiredFields.filter(field => !credentials[field]);
+
+if (missingFields.length > 0) {
+  throw new Error(`Missing required fields in service.json: ${missingFields.join(', ')}`);
 }
 
 let auth, drive;
@@ -197,17 +174,15 @@ async function uploadPDFToDrive(localPath, fileName, folderId) {
     
     // Provide more specific error messages
     if (error.message.includes('DECODER') || error.message.includes('unsupported')) {
-      throw new Error('Private key format error. Check your GOOGLE_PRIVATE_KEY environment variable format.');
+      throw new Error('Private key format error in service.json file.');
     } else if (error.message.includes('storage quota')) {
       throw new Error(`Google Drive storage quota issue. Make sure to share a folder from your personal Drive with ${credentials.client_email}`);
-    } else if (error.message.includes('access')) {
+    } else if (error.message.includes('access') || error.message.includes('permission')) {
       throw new Error(`Access denied. Share the folder ${folderId} with ${credentials.client_email} as Editor`);
-    } else if (error.message.includes('Auth')) {
-      throw new Error('Google Drive authentication failed. Check your environment variables.');
+    } else if (error.message.includes('Auth') || error.message.includes('invalid_grant')) {
+      throw new Error('Google Drive authentication failed. Check your service.json file.');
     } else if (error.message.includes('quota')) {
       throw new Error('Google Drive quota exceeded. Try again later.');
-    } else if (error.message.includes('permission')) {
-      throw new Error('Permission denied. Check folder ID and service account permissions.');
     } else {
       throw new Error(`Google Drive upload failed: ${error.message}`);
     }
