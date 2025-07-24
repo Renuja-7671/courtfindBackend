@@ -27,7 +27,7 @@ router.get("/invoices", authenticateUser, authorizeRole(["Player"]), invoiceCont
 
 //routes needed for player reviews
 router.post("/reviews", authenticateUser, authorizeRole(["Player"]), playerReviewController.addReview);
-router.get("/reviews/:courtId", authenticateUser, authorizeRole(["Player"]), playerReviewController.getReviewsByCourtId);
+router.get("/reviewsNoAuth/:courtId", playerReviewController.getReviewsByCourtId);
 router.get("/reviews/:courtId/stats", authenticateUser, authorizeRole(["Player"]), playerReviewController.getReviewStats);
 router.get("/reviews/:courtId/average", authenticateUser, authorizeRole(["Player"]), playerReviewController.getAverageRatingByCourtId);
 router.get("/generate-invoice/:bookingId", playerInvoiceController.handleInvoiceGeneration);
@@ -36,7 +36,7 @@ router.get("/get-owner-id/:bookingId", authenticateUser, authorizeRole(["Player"
 router.post("/update-payments-table", authenticateUser, authorizeRole(["Player"]), playerInvoiceController.updatePaymentsTable);
 router.get("/reviewsNoAuth/:courtId/stats", playerReviewController.getReviewStats);
 router.get("/reviewsNoAuth/:courtId/average", playerReviewController.getAverageRatingByCourtId);
-
+router.get("/notifications", authenticateUser, authorizeRole(["Player"]), playerController.getPlayerNotifications);
 
 module.exports = router;
 

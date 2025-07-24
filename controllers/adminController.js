@@ -1,5 +1,4 @@
 const AdminModel = require('../models/adminModel'); // Import the model
-
 exports.dashboard = (req, res) => {
     res.json({ message: "Welcome to the Admin Dashboard", user: req.user.userId });
 };
@@ -283,14 +282,14 @@ exports.getUserStats = async (req, res) => {
       AdminModel.getTotalUsersCount(search),
       AdminModel.getPlayersCount(search),
       AdminModel.getOwnersCount(search),
-      AdminModel.getTotalRevenue() // Changed from getAverageRevenue
+      AdminModel.getTotalRevenue() 
     ]);
     
     res.json({
       totalUsers,      // Total users excluding Admins
       totalPlayers,    // Total players
       totalOwners,     // Total owners
-      totalRevenue     // Total revenue from revenue table (changed from averageRevenue)
+      totalRevenue     // Total revenue from revenue table 
     });
   } catch (error) {
     console.error('Error fetching user stats:', error);
@@ -329,3 +328,14 @@ exports.getMonthlyRevenueAnalysis = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch monthly revenue analysis' });
   }
 };
+
+// Updated: Method to get revenue breakdown
+exports.getRevenueBreakdown = async (req, res) => {
+  try {
+    const revenueData = await AdminModel.getRevenueBreakdown();
+    res.json(revenueData);
+  } catch (error) {
+    console.error('Error fetching revenue breakdown:', error);
+    res.status(500).json({ error: 'Failed to fetch revenue breakdown', details: error.message });
+  }
+}; 

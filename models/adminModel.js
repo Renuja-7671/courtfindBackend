@@ -280,7 +280,7 @@ const AdminModel = {
 
 getTotalRevenue: () => {
   return new Promise((resolve, reject) => {
-    const query = 'SELECT SUM(amount_paid) as totalRevenue FROM revenue';
+    const query = 'SELECT SUM(amount) as totalRevenue FROM payments';
     db.query(query, (err, results) => {
       if (err) {
         reject(err);
@@ -296,9 +296,10 @@ getTotalRevenue: () => {
 getRevenueByActivity: () => {
   return new Promise((resolve, reject) => {
     const query = `
-      SELECT activity_name, SUM(amount_paid) as total_amount
-      FROM revenue
-      GROUP BY activity_name
+      SELECT a.name as activity_name, SUM(p.amount) as total_amount
+      FROM payments p
+      join arenas a on p.arenaId = a.arenaId
+      GROUP BY a.name
     `;
     db.query(query, (err, results) => {
       if (err) {
@@ -345,8 +346,11 @@ getTopRatedArenas: () => {
 getMonthlyRevenueAnalysis: (month, year) => {
   return new Promise((resolve, reject) => {
     const query = `
-      SELECT activity_name, SUM(amount_paid) as total_amount
-      FROM revenue
+      SELECT 
+      REGEXP_REPLACE(paymentDesc, '[0-9:]+', '') AS activity_name,
+      COUNT(*) AS count,
+      SUM(amount) AS total_amount
+      from payments
       WHERE DATE_FORMAT(paid_at, '%Y-%m') = ?
       GROUP BY activity_name
     `;
@@ -363,6 +367,23 @@ getMonthlyRevenueAnalysis: (month, year) => {
     });
   });
 },
+
+getRevenueBreakdown: () => {
+    return new Promise((resolve, reject) => {
+      const query = `
+        SELECT 
+          COALESCE((SELECT SUM(amount) FROM payments WHERE playerId IS NULL), 0) as adminRevenue,
+          COALESCE((SELECT SUM(amount) FROM payments WHERE playerId IS NOT NULL), 0) as ownerRevenue
+      `;
+      db.query(query, (err, results) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(results[0]); // Return the first row with both revenues
+        }
+      });
+    });
+  }
 
 };
 

@@ -44,6 +44,7 @@ router.delete('/owners/:id', authenticateUser, authorizeRole(['Admin']), adminCo
 router.get('/user-stats', authenticateUser, authorizeRole(['Admin']), adminController.getUserStats);
 router.get('/revenue-by-activity', authenticateUser, authorizeRole(['Admin']), adminController.getRevenueByActivity);
 router.get('/top-rated-arenas', authenticateUser, authorizeRole(['Admin']), adminController.getTopRatedArenas);
+router.get('/revenue-breakdown', authenticateUser, authorizeRole(['Admin']), adminController.getRevenueBreakdown);
 
 //profit analysis routes
 router.get('/monthly-revenue-analysis', authenticateUser, authorizeRole(['Admin']), adminController.getMonthlyRevenueAnalysis);

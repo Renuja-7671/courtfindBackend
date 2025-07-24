@@ -5,21 +5,22 @@ const fs = require('fs');
 
 exports.downloadArenaRevenueReport = async (req, res) => {
   try {
+    console.log('=== ARENA REVENUE REPORT GENERATION START ===');
     const ownerId = req.user.userId;
+    console.log('Owner ID:', ownerId);
+
+    // Get data from service
     const data = await reportService.getArenaRevenues(ownerId);
+    console.log('Retrieved data:', data.length, 'records');
 
-    const doc = new PDFDocument({ margin: 50 });
+    // Set response headers for PDF download
     const filename = `Arena_Revenue_Report_${Date.now()}.pdf`;
-    const filePath = path.join(__dirname, `../uploads/reports/${filename}`);
-    const writeStream = fs.createWriteStream(filePath);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-    doc.pipe(writeStream);
-
-    // === Add Logo ===
-    const logoPath = path.join(__dirname, '../uploads/assets/logoOnly.png');
-    if (fs.existsSync(logoPath)) {
-      doc.image(logoPath, doc.page.width - 100, 30, { width: 50 });
-    }
+    // Create PDF document and pipe directly to response
+    const doc = new PDFDocument({ margin: 50 });
+    doc.pipe(res);
 
     // === Title ===
     doc
@@ -34,61 +35,127 @@ exports.downloadArenaRevenueReport = async (req, res) => {
       .text(`Generated on: ${new Date().toLocaleString()}`, { align: 'right' })
       .moveDown(2);
 
+    // === Content ===
     if (data.length === 0) {
-      doc.fontSize(14).text('No revenue data available.', { align: 'center' });
+      doc
+        .fontSize(14)
+        .fillColor('#E74C3C')
+        .text('No revenue data available for this year.', { align: 'center' })
+        .moveDown()
+        .fontSize(12)
+        .fillColor('black')
+        .text('This could mean:', { align: 'center' })
+        .text('• No payments have been made yet', { align: 'center' })
+        .text('• No arenas have generated revenue', { align: 'center' })
+        .text('• Data may be from a different year', { align: 'center' });
     } else {
-      const maxTotal = Math.max(...data.map(d => d.total));
-      const barMaxWidth = 300;
+      // Add summary
+      const totalRevenue = data.reduce((sum, row) => sum + parseFloat(row.total), 0);
+      
+      doc
+        .fontSize(14)
+        .fillColor('#27AE60')
+        .text(`Total Revenue: Rs. ${totalRevenue.toFixed(2)}`, { align: 'center' })
+        .text(`Number of Arenas: ${data.length}`, { align: 'center' })
+        .text(`Year: ${new Date().getFullYear()}`, { align: 'center' })
+        .moveDown(2);
 
-      data.forEach((row, index) => {
-        const barWidth = (row.total / maxTotal) * barMaxWidth;
+      // Add table header
+      doc
+        .fontSize(12)
+        .fillColor('#34495E')
+        .text('Rank', 50, doc.y)
+        .text('Arena Name', 100, doc.y)
+        .text('Revenue (Rs.)', 350, doc.y)
+        .text('Percentage', 450, doc.y);
+
+      doc.moveDown();
+
+      // Draw header line
+      doc
+        .moveTo(50, doc.y)
+        .lineTo(550, doc.y)
+        .stroke('#34495E');
+
+      doc.moveDown();
+
+      // Sort data by revenue (highest first)
+      const sortedData = [...data].sort((a, b) => parseFloat(b.total) - parseFloat(a.total));
+
+      // Calculate max total for progress bars
+      const maxTotal = Math.max(...sortedData.map(d => parseFloat(d.total)));
+      const barMaxWidth = 200;
+
+      sortedData.forEach((row, index) => {
+        const revenue = parseFloat(row.total);
+        const percentage = ((revenue / totalRevenue) * 100).toFixed(1);
+        const barWidth = maxTotal > 0 ? (revenue / maxTotal) * barMaxWidth : 0;
         const y = doc.y;
 
-        // Arena name
+        // Rank
         doc
-          .fontSize(12)
+          .fontSize(11)
           .fillColor('#000')
-          .text(`${index + 1}. ${row.name}`, 50, y);
+          .text(`${index + 1}`, 50, y);
 
-        // Bar background
-        doc
-          .rect(200, y, barMaxWidth, 15)
-          .fill('#E5E8E8')
-          .stroke();
-
-        // Revenue bar
-        doc
-          .rect(200, y, barWidth, 15)
-          .fill('#3498DB');
+        // Arena name (truncate if too long)
+        const displayName = row.name.length > 25 ? row.name.substring(0, 25) + '...' : row.name;
+        doc.text(displayName, 100, y, { width: 240 });
 
         // Revenue amount
+        doc.text(`${revenue.toFixed(2)}`, 350, y);
+
+        // Percentage
+        doc.text(`${percentage}%`, 450, y);
+
+        // Visual progress bar
+        const barY = y + 12;
+        
+        // Bar background
         doc
-          .fillColor('#000')
-          .text(`Rs. ${parseFloat(row.total).toFixed(2)}`, 510, y);
+          .rect(100, barY, barMaxWidth, 6)
+          .fill('#E5E8E8');
+
+        // Revenue bar
+        if (barWidth > 0) {
+          doc
+            .rect(100, barY, barWidth, 6)
+            .fill('#3498DB');
+        }
 
         doc.moveDown(2);
+
+        // Add page break if needed
+        if (doc.y > 700) {
+          doc.addPage();
+        }
       });
     }
 
+    // Add footer
+    doc
+      .fontSize(10)
+      .fillColor('#7F8C8D')
+      .text(`Report generated by CourtFind System`, 50, doc.page.height - 50, { align: 'left' })
+      .text(`Generated on: ${new Date().toLocaleString()}`, 50, doc.page.height - 35, { align: 'left' });
+
+    // End the document (this will finish the stream)
     doc.end();
 
-    writeStream.on('finish', () => {
-      res.download(filePath, filename, (err) => {
-        if (err) {
-          console.error('Download error:', err);
-          return res.status(500).json({ error: 'Failed to download file' });
-        }
-
-        // Optional: delete file after download
-        fs.unlink(filePath, (unlinkErr) => {
-          if (unlinkErr) console.error('Error deleting file:', unlinkErr);
-        });
-      });
-    });
+    console.log('PDF streamed successfully to response');
 
   } catch (error) {
-    console.error('Error generating report:', error);
-    res.status(500).json({ error: 'Failed to generate report' });
+    console.error('=== ARENA REVENUE REPORT ERROR ===');
+    console.error('Error:', error.message);
+    console.error('Stack:', error.stack);
+    
+    // If headers haven't been sent yet, send error response
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        error: 'Failed to generate report',
+        details: error.message 
+      });
+    }
   }
 };
 
