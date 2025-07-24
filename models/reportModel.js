@@ -23,7 +23,7 @@ exports.getMostBookedCourts = async (ownerId) => {
     FROM bookings b
     JOIN courts c ON b.courtId = c.courtId
     JOIN arenas a ON c.arenaId = a.arenaId
-    WHERE a.owner_id = 2
+    WHERE a.owner_id = ?
     GROUP BY c.courtId
     ORDER BY bookingsCount DESC
     LIMIT 5;
