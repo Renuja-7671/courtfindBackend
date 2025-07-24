@@ -36,7 +36,7 @@ router.get("/get-owner-id/:bookingId", authenticateUser, authorizeRole(["Player"
 router.post("/update-payments-table", authenticateUser, authorizeRole(["Player"]), playerInvoiceController.updatePaymentsTable);
 router.get("/reviewsNoAuth/:courtId/stats", playerReviewController.getReviewStats);
 router.get("/reviewsNoAuth/:courtId/average", playerReviewController.getAverageRatingByCourtId);
-//router.get("/notifications", authenticateUser, authorizeRole(["Player"]), playerController.getPlayerNotifications);
+router.get("/notifications", authenticateUser, authorizeRole(["Player"]), playerController.getPlayerNotifications);
 
 module.exports = router;
 

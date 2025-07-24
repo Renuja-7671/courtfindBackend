@@ -5,6 +5,7 @@ const db = require('../config/db'); // MySQL connection
 const jwt = require('jsonwebtoken');
 const Player = require('../models/playerModel');
 const Sport = require('../models/sportModel');
+const NotificationModel = require('../models/playerNotificationModel'); // adjust path
 
 exports.getBookings = (req, res) => {
     const playerId = req.user.userId;
@@ -167,6 +168,29 @@ exports.getHomePageData = async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ message: "Unexpected error", error });
+    }
+};
+
+//player notification 
+exports.getPlayerNotifications = async (req, res) => {
+    try {
+        const playerId = req.user.userId;
+
+        NotificationModel.getUpcomingSessions(playerId, (err, results) => {
+            if (err) {
+                console.error("Error fetching notifications:", err);
+                return res.status(500).json({ message: "Database error", error: err });
+            }
+
+            if (results.length === 0) {
+                return res.status(200).json({ message: "No upcoming notifications", notifications: [] });
+            }
+
+            res.status(200).json({ notifications: results });
+        });
+
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching notifications", error });
     }
 };
 
