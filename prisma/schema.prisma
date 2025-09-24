@@ -1,0 +1,221 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  userId            Int            @id @default(autoincrement())
+  role              String?        @db.VarChar(20)
+  firstName         String         @db.VarChar(20)
+  lastName          String         @db.VarChar(20)
+  mobile            String         @db.VarChar(20)
+  country           String         @db.VarChar(20)
+  province          String         @db.VarChar(20)
+  email             String         @unique(map: "email") @db.VarChar(60)
+  zip               String         @db.VarChar(5)
+  address           String         @db.VarChar(90)
+  password          String         @db.VarChar(255)
+  resetToken        String?        @db.VarChar(255)
+  resetTokenExpires String?        @db.VarChar(255)
+  profileImage      String?        @db.VarChar(255)
+  createdAt         DateTime?      @default(now()) @map("created_at") @db.Timestamp(0)
+  ownedArenas       Arena[]        @relation("ArenaOwner")
+  playerBookings    Booking[]      @relation("PlayerBookings")
+  ownerBookings     Booking[]      @relation("OwnerBookings")
+  loginHistory      LoginHistory[]
+  ownerPayments     Payment[]      @relation("PaymentOwner")
+  playerPayments    Payment[]      @relation("PaymentPlayer")
+  revenue           Revenue[]
+  reviews           Review[]
+
+  @@map("users")
+}
+
+model Arena {
+  arenaId           Int          @id @default(autoincrement())
+  ownerId           Int?         @map("owner_id")
+  name              String       @db.VarChar(255)
+  city              String?      @db.VarChar(100)
+  country           String?      @default("Sri Lanka") @db.VarChar(100)
+  description       String?      @db.Text
+  imageUrl          String?      @map("image_url") @db.VarChar(255)
+  arenaStatus       ArenaStatus? @default(Pending)
+  paidStatus        PaidStatus?  @default(Pending)
+  declinationReason String?      @db.Text
+  invoiceUrl        String?      @db.Text
+  amount            Decimal?     @db.Decimal(10, 2)
+  createdAt         DateTime?    @default(now()) @map("created_at") @db.Timestamp(0)
+  owner             User?        @relation("ArenaOwner", fields: [ownerId], references: [userId], onDelete: NoAction, onUpdate: NoAction, map: "arenas_ibfk_1")
+  bookings          Booking[]
+  courts            Court[]
+  payments          Payment[]
+  reviews           Review[]
+
+  @@index([ownerId], map: "owner_id")
+  @@map("arenas")
+}
+
+model Sport {
+  sportId    Int     @id @default(autoincrement())
+  name       String  @unique(map: "name") @db.VarChar(100)
+  noOfPlayer Int?    @map("noOfPlayer")
+  sportType  String? @db.VarChar(25)
+
+  @@map("sports")
+}
+
+model Court {
+  courtId      Int       @id @default(autoincrement())
+  arenaId      Int?
+  name         String?   @db.VarChar(100)
+  size         Int?
+  hourlyRate   Decimal?  @map("hourly_rate") @db.Decimal(10, 2)
+  sport        String?   @db.VarChar(50)
+  images       String?   @db.Text
+  availability String?   @db.Text
+  bookings     Booking[]
+  arena        Arena?    @relation(fields: [arenaId], references: [arenaId], onDelete: NoAction, onUpdate: NoAction, map: "courts_ibfk_1")
+  reviews      Review[]
+
+  @@index([arenaId], map: "arenaId")
+  @@map("courts")
+}
+
+model Booking {
+  bookingId          Int            @id @default(autoincrement())
+  playerId           Int?
+  courtId            Int?
+  ownerId            Int?
+  arenaId            Int?
+  bookingDate        DateTime       @map("booking_date") @db.Date
+  startTime          DateTime       @map("start_time") @db.Time(0)
+  endTime            DateTime       @map("end_time") @db.Time(0)
+  totalPrice         Decimal?       @map("total_price") @db.Decimal(10, 2)
+  paymentStatus      PaymentStatus? @default(Pending) @map("payment_status")
+  status             BookingStatus? @default(Booked)
+  createdAt          DateTime?      @default(now()) @map("created_at") @db.Timestamp(0)
+  invoicesUrl        String?        @map("invoices_url") @db.Text
+  cancellationReason String?        @db.Text
+  player             User?          @relation("PlayerBookings", fields: [playerId], references: [userId], onDelete: NoAction, onUpdate: NoAction, map: "bookings_ibfk_1")
+  court              Court?         @relation(fields: [courtId], references: [courtId], onDelete: NoAction, onUpdate: NoAction, map: "bookings_ibfk_2")
+  owner              User?          @relation("OwnerBookings", fields: [ownerId], references: [userId], onDelete: NoAction, onUpdate: NoAction, map: "bookings_ibfk_3")
+  arena              Arena?         @relation(fields: [arenaId], references: [arenaId], onDelete: NoAction, onUpdate: NoAction, map: "bookings_ibfk_4")
+  payments           Payment[]
+
+  @@index([arenaId], map: "arenaId")
+  @@index([courtId], map: "courtId")
+  @@index([ownerId], map: "ownerId")
+  @@index([playerId], map: "playerId")
+  @@map("bookings")
+}
+
+model Payment {
+  paymentId     Int       @id @default(autoincrement())
+  bookingId     Int?
+  ownerId       Int?
+  paymentDesc   String?   @map("paymentDesc") @db.VarChar(100)
+  amount        Decimal?  @db.Decimal(10, 2)
+  paymentMethod String?   @map("payment_method") @db.VarChar(50)
+  arenaId       Int?
+  playerId      Int?
+  paidAt        DateTime? @default(now()) @map("paid_at") @db.Timestamp(0)
+  booking       Booking?  @relation(fields: [bookingId], references: [bookingId], onDelete: NoAction, onUpdate: NoAction, map: "payments_ibfk_1")
+  owner         User?     @relation("PaymentOwner", fields: [ownerId], references: [userId], onDelete: NoAction, onUpdate: NoAction, map: "payments_ibfk_2")
+  player        User?     @relation("PaymentPlayer", fields: [playerId], references: [userId], onDelete: NoAction, onUpdate: NoAction, map: "payments_ibfk_3")
+  arena         Arena?    @relation(fields: [arenaId], references: [arenaId], onDelete: NoAction, onUpdate: NoAction, map: "payments_ibfk_4")
+
+  @@index([arenaId], map: "arenaId")
+  @@index([bookingId], map: "bookingId")
+  @@index([ownerId], map: "ownerId")
+  @@index([playerId], map: "playerId")
+  @@map("payments")
+}
+
+model Pricing {
+  id           Int       @id @default(autoincrement())
+  activityName String?   @map("activity_name") @db.VarChar(255)
+  price        Decimal   @db.Decimal(10, 2)
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt    DateTime? @map("updated_at") @db.Timestamp(0)
+
+  @@map("pricing")
+}
+
+model Review {
+  reviewId  Int       @id @default(autoincrement())
+  playerId  Int?
+  arenaId   Int?
+  courtId   Int?
+  rating    Int?
+  comment   String?   @db.Text
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
+  player    User?     @relation(fields: [playerId], references: [userId], onDelete: NoAction, onUpdate: NoAction, map: "reviews_ibfk_1")
+  arena     Arena?    @relation(fields: [arenaId], references: [arenaId], onDelete: NoAction, onUpdate: NoAction, map: "reviews_ibfk_2")
+  court     Court?    @relation(fields: [courtId], references: [courtId], onDelete: NoAction, onUpdate: NoAction, map: "reviews_ibfk_3")
+
+  @@index([arenaId], map: "arenaId")
+  @@index([courtId], map: "courtId")
+  @@index([playerId], map: "playerId")
+  @@map("reviews")
+}
+
+model ContactMessage {
+  id        Int       @id @default(autoincrement())
+  name      String?   @db.VarChar(50)
+  email     String?   @db.VarChar(50)
+  phone     String?   @db.VarChar(10)
+  message   String?   @db.Text
+  status    String?   @default("Need Review") @db.VarChar(25)
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
+
+  @@map("contact_messages")
+}
+
+model Revenue {
+  id           Int       @id @default(autoincrement())
+  activityName String?   @map("activity_name") @db.VarChar(255)
+  amountPaid   Decimal?  @map("amount_paid") @db.Decimal(10, 2)
+  paidAt       DateTime? @default(now()) @map("paid_at") @db.Timestamp(0)
+  userId       Int?      @map("user_id")
+  user         User?     @relation(fields: [userId], references: [userId], onDelete: NoAction, onUpdate: NoAction, map: "revenue_ibfk_1")
+
+  @@index([userId], map: "user_id")
+  @@map("revenue")
+}
+
+model LoginHistory {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  loginTime DateTime? @default(now()) @map("login_time") @db.DateTime(0)
+  user      User      @relation(fields: [userId], references: [userId], onDelete: NoAction, onUpdate: NoAction, map: "login_history_ibfk_1")
+
+  @@index([userId], map: "user_id")
+  @@map("login_history")
+}
+
+enum ArenaStatus {
+  Approved
+  Declined
+  Pending
+}
+
+enum PaidStatus {
+  Paid
+  Pending
+}
+
+enum PaymentStatus {
+  Pending
+  Paid
+  Failed
+}
+
+enum BookingStatus {
+  Booked
+  Cancelled
+  Completed
+}

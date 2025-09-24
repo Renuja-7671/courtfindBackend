@@ -1,4 +1,4 @@
-const AdminModel = require('../models/adminModel'); // Import the model
+const AdminModel = require('../models/adminModel');
 exports.dashboard = (req, res) => {
     res.json({ message: "Welcome to the Admin Dashboard", user: req.user.userId });
 };
@@ -41,11 +41,6 @@ exports.updateAdminProfile = async (req, res) => {
         const result = await AdminModel.updateAdminProfile(userId, { firstName, lastName, email });
         
         console.log('Update result:', result);
-        
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ error: 'User not found or no changes made' });
-        }
-        
         res.json({ message: 'Profile updated successfully' });
         
     } catch (error) {
@@ -54,58 +49,47 @@ exports.updateAdminProfile = async (req, res) => {
     }
 };
 
-// Get all pricing items
+// Only allow fetching the price for new arena addition
+const PRICING_TOPIC = "Price for new arena addition";
 exports.getAllPricing = async (req, res) => {
     try {
-        const results = await AdminModel.getAllPricing();
-        res.json(results);
+        const result = await AdminModel.getArenaAdditionPricing();
+        res.json(result ? [result] : []);
     } catch (error) {
         console.error('Error fetching pricing data:', error);
         res.status(500).json({ error: 'Failed to fetch pricing data' });
     }
 };
 
-// Update a pricing item
+// Update the price for new arena addition only
 exports.updatePricing = async (req, res) => {
     try {
-        const { id, activity_name, price } = req.body;
-        
-        if (!id || !price || !activity_name) {
-            return res.status(400).json({ error: 'ID, activity name, and price are required' });
+        const { id, price } = req.body;
+        if (!id || !price) {
+            return res.status(400).json({ error: 'ID and price are required' });
         }
-        
-        const result = await AdminModel.updatePricing({ id, activity_name, price });
-        
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ error: 'Pricing item not found' });
-        }
-        
+        const result = await AdminModel.updatePricing({ id, activity_name: PRICING_TOPIC, price });
         res.json({ message: 'Pricing updated successfully' });
-        
     } catch (error) {
         console.error('Error updating pricing:', error);
         res.status(500).json({ error: 'Failed to update pricing' });
     }
 };
 
-// Add a new pricing item
+// Add the price for new arena addition only (if not exists)
 exports.addPricing = async (req, res) => {
     try {
-        const { activity_name, price } = req.body;
-        
-        if (!activity_name || !price) {
-            return res.status(400).json({ error: 'Activity name and price are required' });
+        const { price } = req.body;
+        if (!price) {
+            return res.status(400).json({ error: 'Price is required' });
         }
-        
-        const result = await AdminModel.addPricing({ activity_name, price });
-        
+        const result = await AdminModel.addPricing({ activity_name: PRICING_TOPIC, price });
         res.status(201).json({ 
             message: 'Pricing added successfully',
-            id: result.insertId,
-            activity_name,
+            id: result.id,
+            activity_name: PRICING_TOPIC,
             price
         });
-        
     } catch (error) {
         console.error('Error adding pricing:', error);
         res.status(500).json({ error: 'Failed to add pricing' });
@@ -121,12 +105,7 @@ exports.deletePricing = async (req, res) => {
             return res.status(400).json({ error: 'ID is required' });
         }
         
-        const result = await AdminModel.deletePricing(id);
-        
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ error: 'Pricing item not found' });
-        }
-        
+        await AdminModel.deletePricing(id);
         res.json({ message: 'Pricing deleted successfully' });
         
     } catch (error) {
@@ -191,12 +170,7 @@ exports.deletePlayer = async (req, res) => {
             return res.status(400).json({ error: 'Player ID is required' });
         }
         
-        const result = await AdminModel.deletePlayer(id);
-        
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ error: 'Player not found' });
-        }
-        
+        await AdminModel.deletePlayer(id);
         res.json({ message: 'Player deleted successfully' });
         
     } catch (error) {
@@ -261,12 +235,7 @@ exports.deleteOwner = async (req, res) => {
             return res.status(400).json({ error: 'Owner ID is required' });
         }
         
-        const result = await AdminModel.deleteOwner(id);
-        
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ error: 'Owner not found' });
-        }
-        
+        await AdminModel.deleteOwner(id);
         res.json({ message: 'Owner deleted successfully' });
         
     } catch (error) {
@@ -274,6 +243,7 @@ exports.deleteOwner = async (req, res) => {
         res.status(500).json({ error: 'Failed to delete owner' });
     }
 };
+
 //analytics counts
 exports.getUserStats = async (req, res) => {
   try {
@@ -317,7 +287,6 @@ exports.getTopRatedArenas = async (req, res) => {
   }
 };
 
-
 exports.getMonthlyRevenueAnalysis = async (req, res) => {
   try {
     const { month, year } = req.query; // Expect month (1-12) and year as query params
@@ -338,4 +307,4 @@ exports.getRevenueBreakdown = async (req, res) => {
     console.error('Error fetching revenue breakdown:', error);
     res.status(500).json({ error: 'Failed to fetch revenue breakdown', details: error.message });
   }
-}; 
+};

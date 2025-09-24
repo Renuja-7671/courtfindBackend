@@ -1,44 +1,140 @@
-const db = require("../config/db"); 
+const prisma = require('../prisma/client');
 
 const court = {
-    create: (courtData, callback) => {
-    const {
-        name,
-        size,
-        rate,
-        sport,
-        images,
-        availability,
-        arenaId,
-    } = courtData;
-    
-    const query = `INSERT INTO courts (name, size, hourly_rate, sport, images, availability, arenaId) 
-    VALUES (?, ?, ?, ?, ?, ?, ?)`;
-    db.query(query, [name, size, rate, sport, JSON.stringify(images), JSON.stringify(availability), arenaId], callback);
+    create: async (courtData) => {
+        try {
+            const {
+                name,
+                size,
+                rate,
+                sport,
+                images,
+                availability,
+                arenaId,
+            } = courtData;
+
+            const newCourt = await prisma.court.create({
+                data: {
+                    name: name,
+                    size: parseInt(size),
+                    hourlyRate: parseFloat(rate),
+                    sport: sport,
+                    images: JSON.stringify(images),
+                    availability: JSON.stringify(availability),
+                    arenaId: parseInt(arenaId)
+                }
+            });
+
+            return newCourt;
+        } catch (error) {
+            console.error('Error creating court:', error);
+            throw error;
+        }
     },
 
-    getCourtsforbooking: (courtId, callback) => {
-        const query = `SELECT a.owner_id, u.mobile, a.arenaId, a.name AS arenaName, a.city, a.country, a.description, c.courtId, c.name AS courtName, c.size, c.hourly_rate, c.sport, c.images, c.availability FROM arenas a, courts c, users u WHERE a.arenaId = c.arenaId AND a.owner_id = u.userId AND c.courtId = ?;`;
-        db.query(query, [courtId], callback);
+    getCourtsforbooking: async (courtId) => {
+        try {
+            const courtData = await prisma.court.findUnique({
+                where: {
+                    courtId: parseInt(courtId)
+                },
+                include: {
+                    arena: {
+                        include: {
+                            owner: {
+                                select: {
+                                    mobile: true
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            if (!courtData) {
+                return null;
+            }
+
+            // Transform to match original structure
+            return {
+                owner_id: courtData.arena.ownerId,
+                mobile: courtData.arena.owner.mobile,
+                arenaId: courtData.arena.arenaId,
+                arenaName: courtData.arena.name,
+                city: courtData.arena.city,
+                country: courtData.arena.country,
+                description: courtData.arena.description,
+                courtId: courtData.courtId,
+                courtName: courtData.name,
+                size: courtData.size,
+                hourly_rate: courtData.hourlyRate,
+                sport: courtData.sport,
+                images: courtData.images,
+                availability: courtData.availability
+            };
+        } catch (error) {
+            console.error('Error getting court for booking:', error);
+            throw error;
+        }
     },
 
-    // Get courts by arena (only needed fields)  
-getCourtsByArena: (arenaId, callback) => {
-  const query = "SELECT courtId, name FROM courts WHERE arenaId = ?";
-  db.query(query, [arenaId], callback);
-},
+    // Get courts by arena (only needed fields)
+    getCourtsByArena: async (arenaId) => {
+        try {
+            const courts = await prisma.court.findMany({
+                where: {
+                    arenaId: parseInt(arenaId)
+                },
+                select: {
+                    courtId: true,
+                    name: true
+                }
+            });
 
-// Update court name
-updateCourtName: (courtId, name, callback) => {
-  const query = "UPDATE courts SET name = ? WHERE courtId = ?";
-  db.query(query, [name, courtId], callback);
-},
+            return courts;
+        } catch (error) {
+            console.error('Error getting courts by arena:', error);
+            throw error;
+        }
+    },
 
-// Delete court
-deleteCourt: (courtId, callback) => {
-  const query = "DELETE FROM courts WHERE courtId = ?";
-  db.query(query, [courtId], callback);
-}
-    
+    // Update court name
+    updateCourtName: async (courtId, name) => {
+        try {
+            const updatedCourt = await prisma.court.update({
+                where: {
+                    courtId: parseInt(courtId)
+                },
+                data: {
+                    name: name
+                }
+            });
+
+            return updatedCourt;
+        } catch (error) {
+            console.error('Error updating court name:', error);
+            throw error;
+        }
+    },
+
+    // Delete court
+    deleteCourt: async (courtId) => {
+        try {
+            const deletedCourt = await prisma.court.delete({
+                where: {
+                    courtId: parseInt(courtId)
+                }
+            });
+
+            return true;
+        } catch (error) {
+            if (error.code === 'P2025') {
+                return false; // Court not found
+            }
+            console.error('Error deleting court:', error);
+            throw error;
+        }
+    }
 };
+
 module.exports = court;

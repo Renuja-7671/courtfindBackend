@@ -1,33 +1,90 @@
-const db = require('../config/db');
+const prisma = require('../prisma/client');
 
 exports.getArenaRevenues = async (ownerId) => {
-  const currentYear = new Date().getFullYear();
+  try {
+    const currentYear = new Date().getFullYear();
+    
+    const revenues = await prisma.payment.groupBy({
+      by: ['arenaId'],
+      where: {
+        ownerId: parseInt(ownerId),
+        playerId: { not: null },
+        paidAt: {
+          gte: new Date(`${currentYear}-01-01`),
+          lt: new Date(`${currentYear + 1}-01-01`)
+        }
+      },
+      _sum: {
+        amount: true
+      }
+    });
 
-  const sql = `
-    SELECT a.name, SUM(p.amount) AS total
-    FROM payments p
-    JOIN arenas a ON p.arenaId = a.arenaId
-    WHERE p.ownerId = ?
-      AND p.playerId IS NOT NULL
-      AND YEAR(p.paid_at) = ?
-    GROUP BY a.name
-  `;
+    // Get arena names for each group
+    const results = await Promise.all(
+      revenues.map(async (revenue) => {
+        const arena = await prisma.arena.findUnique({
+          where: { arenaId: revenue.arenaId },
+          select: { name: true }
+        });
+        
+        return {
+          name: arena.name,
+          total: revenue._sum.amount
+        };
+      })
+    );
 
-  const [results] = await db.promise().query(sql, [ownerId, currentYear]);
-  return results;
+    return results;
+  } catch (error) {
+    console.error('Error getting arena revenues:', error);
+    throw error;
+  }
 };
 
 exports.getMostBookedCourts = async (ownerId) => {
-  const query = `
-    SELECT c.name AS courtName, a.name AS arenaName, COUNT(b.bookingId) AS bookingsCount
-    FROM bookings b
-    JOIN courts c ON b.courtId = c.courtId
-    JOIN arenas a ON c.arenaId = a.arenaId
-    WHERE a.owner_id = ?
-    GROUP BY c.courtId
-    ORDER BY bookingsCount DESC
-    LIMIT 5;
-  `;
-  const [results] = await db.promise().query(query, [ownerId]);
-  return results;
+  try {
+    const courtBookings = await prisma.booking.groupBy({
+      by: ['courtId'],
+      where: {
+        arena: {
+          ownerId: parseInt(ownerId)
+        }
+      },
+      _count: {
+        bookingId: true
+      },
+      orderBy: {
+        _count: {
+          bookingId: 'desc'
+        }
+      },
+      take: 5
+    });
+
+    // Get court and arena names for each group
+    const results = await Promise.all(
+      courtBookings.map(async (booking) => {
+        const court = await prisma.court.findUnique({
+          where: { courtId: booking.courtId },
+          select: {
+            name: true,
+            arena: {
+              select: { name: true }
+            }
+          }
+        });
+        
+        return {
+          courtName: court.name,
+          arenaName: court.arena.name,
+          bookingsCount: booking._count.bookingId
+        };
+      })
+    );
+
+    return results;
+  } catch (error) {
+    console.error('Error getting most booked courts:', error);
+    throw error;
+  }
 };

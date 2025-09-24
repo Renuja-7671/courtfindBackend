@@ -1,16 +1,30 @@
-const db = require('../config/db');
+const prisma = require('../prisma/client');
 
 const OwnerDashboard = {
     fetchStats: async (ownerId) => {
         try {
-            const [arenaRes] = await query('SELECT COUNT(*) AS totalArenas FROM arenas WHERE owner_id = ?', [ownerId]);
-            const totalArenas = arenaRes[0].totalArenas;
+            const totalArenas = await prisma.arena.count({
+                where: { ownerId: parseInt(ownerId) }
+            });
 
-            const [bookingRes] = await query('SELECT COUNT(*) AS totalBookings FROM bookings WHERE ownerId = ?', [ownerId]);
-            const totalBookings = bookingRes[0].totalBookings;
+            const totalBookings = await prisma.booking.count({
+                where: { ownerId: parseInt(ownerId) }
+            });
 
-            const [incomeRes] = await query('SELECT SUM(amount) AS totalIncome FROM payments WHERE ownerId = ? AND playerId IS NOT NULL  AND YEAR(paid_at) = YEAR(CURDATE());', [ownerId]);
-            const totalIncome = incomeRes[0].totalIncome || 0;
+            const currentYear = new Date().getFullYear();
+            const incomeResult = await prisma.payment.aggregate({
+                where: {
+                    ownerId: parseInt(ownerId),
+                    playerId: { not: null },
+                    paidAt: {
+                        gte: new Date(`${currentYear}-01-01`),
+                        lt: new Date(`${currentYear + 1}-01-01`)
+                    }
+                },
+                _sum: { amount: true }
+            });
+
+            const totalIncome = incomeResult._sum.amount || 0;
 
             return { totalArenas, totalBookings, totalIncome };
         } catch (err) {
@@ -20,19 +34,25 @@ const OwnerDashboard = {
 
     fetchIncomeOverview: async (ownerId, year) => {
         try {
-            const queryStr = `
-                SELECT MONTH(paid_at) AS month, SUM(amount) AS total
-                FROM payments
-                WHERE ownerId = ? AND YEAR(paid_at) = ? AND playerId IS NOT NULL
-                GROUP BY MONTH(paid_at)
-                ORDER BY MONTH(paid_at)
-            `;
-            const [rows] = await query(queryStr, [ownerId, year]);
+            const payments = await prisma.payment.groupBy({
+                by: ['paidAt'],
+                where: {
+                    ownerId: parseInt(ownerId),
+                    playerId: { not: null },
+                    paidAt: {
+                        gte: new Date(`${year}-01-01`),
+                        lt: new Date(`${year + 1}-01-01`)
+                    }
+                },
+                _sum: { amount: true }
+            });
 
             const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             const values = Array(12).fill(0);
-            rows.forEach(row => {
-                values[row.month - 1] = parseFloat(row.total);
+            
+            payments.forEach(payment => {
+                const month = payment.paidAt.getMonth();
+                values[month] += parseFloat(payment._sum.amount);
             });
 
             return { labels, values };
@@ -40,32 +60,48 @@ const OwnerDashboard = {
             console.error("Error fetching income overview:", err);
             throw err;
         }
-    }, 
+    },
 
     getTotalIncomeForYear: async (ownerId, year) => {
-    const queryStr = `
-        SELECT SUM(amount) AS total_income
-        FROM payments
-        WHERE ownerId = ? 
-        AND YEAR(paid_at) = ? 
-        AND playerId IS NOT NULL
-    `;
-    const [rows] = await query(queryStr, [ownerId, year]);
-    return rows[0].total_income || 0;
+        try {
+            const result = await prisma.payment.aggregate({
+                where: {
+                    ownerId: parseInt(ownerId),
+                    playerId: { not: null },
+                    paidAt: {
+                        gte: new Date(`${year}-01-01`),
+                        lt: new Date(`${year + 1}-01-01`)
+                    }
+                },
+                _sum: { amount: true }
+            });
+            return result._sum.amount || 0;
+        } catch (err) {
+            throw err;
+        }
     },
 
     fetchRecentBookings: async (ownerId) => {
         try {
-            const queryStr = `
-                SELECT b.bookingId AS bookingId, a.name AS arenaName, c.name AS court, b.booking_date, b.start_time AS startTime, b.end_time
-                FROM bookings b 
-                JOIN arenas a ON b.arenaId = a.arenaId 
-                JOIN courts c ON b.courtId = c.courtId
-                WHERE a.owner_id = ?
-                ORDER BY b.booking_date DESC
-            `;
-            const [rows] = await query(queryStr, [ownerId]);
-            return rows;
+            const bookings = await prisma.booking.findMany({
+                where: {
+                    arena: { ownerId: parseInt(ownerId) }
+                },
+                include: {
+                    arena: { select: { name: true } },
+                    court: { select: { name: true } }
+                },
+                orderBy: { bookingDate: 'desc' }
+            });
+
+            return bookings.map(booking => ({
+                bookingId: booking.bookingId,
+                arenaName: booking.arena.name,
+                court: booking.court.name,
+                booking_date: booking.bookingDate,
+                startTime: booking.startTime,
+                end_time: booking.endTime
+            }));
         } catch (err) {
             throw err;
         }
@@ -73,162 +109,278 @@ const OwnerDashboard = {
 
     fetchPaymentHistory: async (ownerId) => {
         try {
-            const queryStr = `
-                SELECT paymentId, paymentDesc, paid_at, amount
-                FROM payments
-                WHERE ownerId = ?
-                ORDER BY paid_at DESC
-            `;
-            const [rows] = await query(queryStr, [ownerId]);
-            return rows;
+            const payments = await prisma.payment.findMany({
+                where: { ownerId: parseInt(ownerId) },
+                orderBy: { paidAt: 'desc' },
+                select: {
+                    paymentId: true,
+                    paymentDesc: true,
+                    paidAt: true,
+                    amount: true
+                }
+            });
+
+            return payments.map(payment => ({
+                paymentId: payment.paymentId,
+                paymentDesc: payment.paymentDesc,
+                paid_at: payment.paidAt,
+                amount: payment.amount
+            }));
         } catch (err) {
             throw err;
         }
     },
 
-    fetchArenaBookings: async (ownerId) =>{
+    fetchArenaBookings: async (ownerId) => {
         try {
-            const queryStr = `SELECT b.bookingId, c.name AS court_name, b.booking_date, b.start_time, b.end_time, b.total_price, b.payment_status, b.status, b.created_at AS booked_at, u.firstName, u.lastName, u.mobile, u.email
-                              FROM courts c, bookings b, users u
-                              WHERE c.courtId = b.courtId AND b.playerId = u.userId AND b.ownerId = ?
-                              ORDER BY b.booking_date DESC, b.start_time ASC`;
+            const bookings = await prisma.booking.findMany({
+                where: { ownerId: parseInt(ownerId) },
+                include: {
+                    court: { select: { name: true } },
+                    player: {
+                        select: {
+                            firstName: true,
+                            lastName: true,
+                            mobile: true,
+                            email: true
+                        }
+                    }
+                },
+                orderBy: [
+                    { bookingDate: 'desc' },
+                    { startTime: 'asc' }
+                ]
+            });
 
-           const[rows] = await query(queryStr,[ownerId]) ;
-           return rows;      
+            return bookings.map(booking => ({
+                bookingId: booking.bookingId,
+                court_name: booking.court.name,
+                booking_date: booking.bookingDate,
+                start_time: booking.startTime,
+                end_time: booking.endTime,
+                total_price: booking.totalPrice,
+                payment_status: booking.paymentStatus,
+                status: booking.status,
+                booked_at: booking.createdAt,
+                firstName: booking.player.firstName,
+                lastName: booking.player.lastName,
+                mobile: booking.player.mobile,
+                email: booking.player.email
+            }));
         } catch (err) {
             throw err;
-    }
-},
-
-    updateCancelStatus : async (bookingId, reason) => {
-        try {
-            const queryStr = `UPDATE bookings SET status = 'Cancelled', cancellationReason = ? WHERE bookingId =?`;
-            const [rows] = await query(queryStr, [reason, bookingId]);
-            return rows;
-        } catch (err) {
-            throw err;
-    }
-}, 
-
-fetchArenasOfOwner : async (ownerId) => {
-    try {
-        const queryStr = `SELECT arenaId, name FROM arenas WHERE owner_id = ? AND paidStatus = 'Paid'`;
-        const [rows] = await query(queryStr, [ownerId]) ;
-        return rows ;
-        } catch (err) {
-            throw err ;
-            }
-},
-      
-
- fetchSelectedArenaBookings: async (ownerId, arenaId) =>{
-        try {
-            const queryStr = `SELECT b.bookingId, c.name AS court_name, b.booking_date, b.start_time, b.end_time, b.total_price, b.payment_status, b.status, b.created_at AS booked_at, u.firstName, u.lastName, u.mobile, u.email
-                              FROM courts c, bookings b, users u
-                              WHERE c.courtId = b.courtId AND b.playerId = u.userId AND b.ownerId = ? AND b.arenaId = ?
-                              ORDER BY b.booking_date DESC, b.start_time ASC`;
-
-           const[rows] = await query(queryStr,[ownerId, arenaId]) ;
-           return rows;      
-        } catch (err) {
-            throw err;
-    }
-},
-
-fetchCourtsByArenaId: async (arenaId) => {
-    try {
-        const queryStr = `SELECT courtId, name FROM courts WHERE arenaId = ?`;
-        const [rows] = await query(queryStr, [arenaId]) ;
-        return rows ;
-        } catch (err) {
-            throw err ;
-            }
-},
-
-fetchFilteredArenaBookings: async (ownerId, arenaId, courtName) => {
-    console.log("Fetching filtered arena bookings with parameters:", { ownerId, arenaId, courtName });
-    try {
-        let queryStr = `
-            SELECT b.bookingId, c.name AS court_name, b.booking_date, b.start_time, b.end_time,
-                   b.total_price, b.payment_status, b.status, b.created_at AS booked_at,
-                   u.firstName, u.lastName, u.mobile, u.email
-            FROM courts c, bookings b, users u
-            WHERE c.courtId = b.courtId 
-              AND b.playerId = u.userId 
-              AND b.ownerId = ? 
-              AND b.arenaId = ?
-        `;
-
-        const params = [ownerId, arenaId];
-
-        if (courtName) {
-            queryStr += ` AND c.name = ?`;
-            params.push(courtName);
         }
+    },
 
-        queryStr += ` ORDER BY b.booking_date DESC, b.start_time ASC`;
+    updateCancelStatus: async (bookingId, reason) => {
+        try {
+            const booking = await prisma.booking.update({
+                where: { bookingId: parseInt(bookingId) },
+                data: {
+                    status: 'Cancelled',
+                    cancellationReason: reason
+                }
+            });
+            return booking;
+        } catch (err) {
+            throw err;
+        }
+    },
 
-        const [rows] = await query(queryStr, params);
-        return rows;
-    } catch (err) {
-        throw err;
-    }
-},
+    fetchArenasOfOwner: async (ownerId) => {
+        try {
+            const arenas = await prisma.arena.findMany({
+                where: {
+                    ownerId: parseInt(ownerId),
+                    paidStatus: 'Paid'
+                },
+                select: {
+                    arenaId: true,
+                    name: true
+                }
+            });
+            return arenas;
+        } catch (err) {
+            throw err;
+        }
+    },
 
-// FOR MY PROFIT DASHBOARD
+    fetchSelectedArenaBookings: async (ownerId, arenaId) => {
+        try {
+            const bookings = await prisma.booking.findMany({
+                where: {
+                    ownerId: parseInt(ownerId),
+                    arenaId: parseInt(arenaId)
+                },
+                include: {
+                    court: { select: { name: true } },
+                    player: {
+                        select: {
+                            firstName: true,
+                            lastName: true,
+                            mobile: true,
+                            email: true
+                        }
+                    }
+                },
+                orderBy: [
+                    { bookingDate: 'desc' },
+                    { startTime: 'asc' }
+                ]
+            });
 
-    // 1. Total Revenue Function
+            return bookings.map(booking => ({
+                bookingId: booking.bookingId,
+                court_name: booking.court.name,
+                booking_date: booking.bookingDate,
+                start_time: booking.startTime,
+                end_time: booking.endTime,
+                total_price: booking.totalPrice,
+                payment_status: booking.paymentStatus,
+                status: booking.status,
+                booked_at: booking.createdAt,
+                firstName: booking.player.firstName,
+                lastName: booking.player.lastName,
+                mobile: booking.player.mobile,
+                email: booking.player.email
+            }));
+        } catch (err) {
+            throw err;
+        }
+    },
+
+    fetchCourtsByArenaId: async (arenaId) => {
+        try {
+            const courts = await prisma.court.findMany({
+                where: { arenaId: parseInt(arenaId) },
+                select: {
+                    courtId: true,
+                    name: true
+                }
+            });
+            return courts;
+        } catch (err) {
+            throw err;
+        }
+    },
+
+    fetchFilteredArenaBookings: async (ownerId, arenaId, courtName) => {
+        try {
+            const whereClause = {
+                ownerId: parseInt(ownerId),
+                arenaId: parseInt(arenaId)
+            };
+
+            if (courtName) {
+                whereClause.court = {
+                    name: courtName
+                };
+            }
+
+            const bookings = await prisma.booking.findMany({
+                where: whereClause,
+                include: {
+                    court: { select: { name: true } },
+                    player: {
+                        select: {
+                            firstName: true,
+                            lastName: true,
+                            mobile: true,
+                            email: true
+                        }
+                    }
+                },
+                orderBy: [
+                    { bookingDate: 'desc' },
+                    { startTime: 'asc' }
+                ]
+            });
+
+            return bookings.map(booking => ({
+                bookingId: booking.bookingId,
+                court_name: booking.court.name,
+                booking_date: booking.bookingDate,
+                start_time: booking.startTime,
+                end_time: booking.endTime,
+                total_price: booking.totalPrice,
+                payment_status: booking.paymentStatus,
+                status: booking.status,
+                booked_at: booking.createdAt,
+                firstName: booking.player.firstName,
+                lastName: booking.player.lastName,
+                mobile: booking.player.mobile,
+                email: booking.player.email
+            }));
+        } catch (err) {
+            throw err;
+        }
+    },
+
+    // FOR MY PROFIT DASHBOARD
     fetchTotalRevenue: async (ownerId) => {
         try {
-            const queryStr = `
-                SELECT SUM(p.amount) AS total_revenue
-                FROM payments p
-                JOIN bookings b ON p.bookingId = b.bookingId
-                WHERE b.ownerId = ?
-            `;
-            const [rows] = await query(queryStr, [ownerId]);
-            return rows[0].total_revenue || 0;
+            const result = await prisma.payment.aggregate({
+                where: {
+                    booking: {
+                        ownerId: parseInt(ownerId)
+                    }
+                },
+                _sum: { amount: true }
+            });
+            return result._sum.amount || 0;
         } catch (err) {
             throw err;
         }
     },
 
-    // Revenue for current month
     fetchCurrentMonthRevenue: async (ownerId) => {
         try {
-            const queryStr = `
-                SELECT SUM(p.amount) AS current_month_revenue
-                FROM payments p
-                JOIN bookings b ON p.bookingId = b.bookingId
-                WHERE b.ownerId = ?
-                AND MONTH(p.paid_at) = MONTH(CURRENT_DATE())
-                AND YEAR(p.paid_at) = YEAR(CURRENT_DATE())
-            `;
-            const [rows] = await query(queryStr, [ownerId]);
-            return rows[0].current_month_revenue || 0;
+            const now = new Date();
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+            const result = await prisma.payment.aggregate({
+                where: {
+                    booking: {
+                        ownerId: parseInt(ownerId)
+                    },
+                    paidAt: {
+                        gte: startOfMonth,
+                        lte: endOfMonth
+                    }
+                },
+                _sum: { amount: true }
+            });
+            return result._sum.amount || 0;
         } catch (err) {
             throw err;
         }
     },
 
-    //2. Yearly Chart Data Function
     fetchYearlyChartData: async (ownerId, year = new Date().getFullYear()) => {
         try {
-            const queryStr = `
-                SELECT 
-                    a.name AS arena_name,
-                    MONTH(p.paid_at) AS month,
-                    SUM(p.amount) AS total
-                FROM payments p
-                JOIN bookings b ON p.bookingId = b.bookingId
-                JOIN arenas a ON b.arenaId = a.arenaId
-                WHERE b.ownerId = ? AND YEAR(p.paid_at) = ?
-                GROUP BY a.arenaId, a.name, MONTH(p.paid_at)
-                ORDER BY a.name, MONTH(p.paid_at)
-            `;
-            const [rows] = await query(queryStr, [ownerId, year]);
+            const payments = await prisma.payment.findMany({
+                where: {
+                    booking: {
+                        ownerId: parseInt(ownerId)
+                    },
+                    paidAt: {
+                        gte: new Date(`${year}-01-01`),
+                        lt: new Date(`${year + 1}-01-01`)
+                    }
+                },
+                include: {
+                    booking: {
+                        include: {
+                            arena: {
+                                select: { name: true }
+                            }
+                        }
+                    }
+                }
+            });
 
-            const arenaNames = [...new Set(rows.map(row => row.arena_name))];
+            const arenaNames = [...new Set(payments.map(p => p.booking.arena.name))];
 
             const chartData = {
                 labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
@@ -237,9 +389,10 @@ fetchFilteredArenaBookings: async (ownerId, arenaId, courtName) => {
 
             arenaNames.forEach(arenaName => {
                 const arenaData = Array(12).fill(0);
-                rows.forEach(row => {
-                    if (row.arena_name === arenaName) {
-                        arenaData[row.month - 1] = row.total;
+                payments.forEach(payment => {
+                    if (payment.booking.arena.name === arenaName) {
+                        const month = payment.paidAt.getMonth();
+                        arenaData[month] += parseFloat(payment.amount);
                     }
                 });
 
@@ -255,104 +408,55 @@ fetchFilteredArenaBookings: async (ownerId, arenaId, courtName) => {
         }
     },
 
+    fetchMonthlyChartData: async (ownerId, year = new Date().getFullYear(), month = new Date().getMonth() + 1) => {
+        try {
+            const startDate = new Date(year, month - 1, 1);
+            const endDate = new Date(year, month, 0);
 
-    // 3. Monthly Chart Data Function
-// Updated fetchMonthlyChartData function in ownerModel.js
-fetchMonthlyChartData: async (ownerId, year = new Date().getFullYear(), month = new Date().getMonth() + 1) => {
-    try {
-        const queryStr = `
-        SELECT 
-            a.name AS arena_name,
-            DAY(p.paid_at) AS day,
-            SUM(p.amount) AS total
-        FROM payments p
-        JOIN bookings b ON p.bookingId = b.bookingId
-        JOIN arenas a ON b.arenaId = a.arenaId
-        WHERE b.ownerId = ? AND YEAR(p.paid_at) = ? AND MONTH(p.paid_at) = ? 
-        GROUP BY a.arenaId, a.name, DAY(p.paid_at)
-        ORDER BY a.name, DAY(p.paid_at)
-        `;
-        const [rows] = await query(queryStr, [ownerId, year, month]);
-        console.log("Getting data for:", ownerId, year, month);
-        console.log("Query results:", rows); // Debug log
-        
-        // Clear previous state by resetting chartData on every call
-        
-        const daysInMonth = new Date(year, month, 0).getDate();
-        const dayLabels = Array.from({ length: daysInMonth }, (_, i) => (i + 1).toString());
-
-        // Initialize empty chart data
-        const chartData = {
-            labels: dayLabels,
-            datasets: []
-        };
-
-        // If no data found, return empty chart
-        if (!rows || rows.length === 0) {
-            console.log("No data found for the selected month");
-            return chartData;
-        }
-
-        const arenaNames = [...new Set(rows.map(row => row.arena_name))];
-
-        arenaNames.forEach(arenaName => {
-            const arenaData = Array(daysInMonth).fill(0);
-            rows.forEach(row => {
-                if (row.arena_name === arenaName) {
-                    arenaData[row.day - 1] = row.total;
+            const payments = await prisma.payment.findMany({
+                where: {
+                    booking: {
+                        ownerId: parseInt(ownerId)
+                    },
+                    paidAt: {
+                        gte: startDate,
+                        lte: endDate
+                    }
+                },
+                include: {
+                    booking: {
+                        include: {
+                            arena: {
+                                select: { name: true }
+                            }
+                        }
+                    }
                 }
             });
 
-            chartData.datasets.push({
-                label: arenaName,
-                data: arenaData
-            });
-        });
+            const daysInMonth = endDate.getDate();
+            const dayLabels = Array.from({ length: daysInMonth }, (_, i) => (i + 1).toString());
 
-        return chartData;
-    } catch (err) {
-        throw err;
-    }
-},
-/*
-    fetchMonthlyChartData: async (ownerId, year = new Date().getFullYear(), month = new Date().getMonth() + 1) => {
-        try {
-            const queryStr = `
-                SELECT 
-                    a.name AS arena_name,
-                    DAY(p.paid_at) AS day,
-                    SUM(p.amount) AS total
-                FROM payments p
-                JOIN bookings b ON p.bookingId = b.bookingId
-                JOIN arenas a ON b.arenaId = a.arenaId
-                WHERE b.ownerId = ? AND YEAR(p.paid_at) = ?
-                GROUP BY a.arenaId, a.name, DAY(p.paid_at)
-                ORDER BY a.name, DAY(p.paid_at)
-            `;
-            const [rows] = await query(queryStr, [ownerId, year]);
-
-            // Get unique arena names
-            const arenaNames = [...new Set(rows.map(row => row.arena_name))];
-            
-            // Get days in the specified year (assuming current month or you can add month parameter)
-            const daysInMonth = new Date(year, new Date().getMonth() + 1, 0).getDate();
-            const dayLabels = Array.from({length: daysInMonth}, (_, i) => (i + 1).toString());
-            
-            // Prepare data structure
             const chartData = {
                 labels: dayLabels,
                 datasets: []
             };
 
-            // Create dataset for each arena
+            if (!payments || payments.length === 0) {
+                return chartData;
+            }
+
+            const arenaNames = [...new Set(payments.map(p => p.booking.arena.name))];
+
             arenaNames.forEach(arenaName => {
                 const arenaData = Array(daysInMonth).fill(0);
-                rows.forEach(row => {
-                    if (row.arena_name === arenaName) {
-                        arenaData[row.day - 1] = row.total;
+                payments.forEach(payment => {
+                    if (payment.booking.arena.name === arenaName) {
+                        const day = payment.paidAt.getDate();
+                        arenaData[day - 1] += parseFloat(payment.amount);
                     }
                 });
-                
+
                 chartData.datasets.push({
                     label: arenaName,
                     data: arenaData
@@ -364,114 +468,149 @@ fetchMonthlyChartData: async (ownerId, year = new Date().getFullYear(), month = 
             throw err;
         }
     },
-*/
-    // 4. All Transactions Function
+
     fetchAllTransactions: async (ownerId) => {
         try {
-            const queryStr = `
-                SELECT 
-                    b.bookingId,
-                    CONCAT(u.firstName, ' ', u.lastName) AS player_name,
-                    DATE(p.paid_at) AS date,
-                    p.amount
-                FROM payments p
-                JOIN bookings b ON p.bookingId = b.bookingId
-                JOIN users u ON b.playerId = u.userId
-                WHERE b.ownerId = ?
-                ORDER BY p.paid_at DESC
-            `;
-            const [rows] = await query(queryStr, [ownerId]);
-            return rows;
+            const transactions = await prisma.payment.findMany({
+                where: {
+                    booking: {
+                        ownerId: parseInt(ownerId)
+                    }
+                },
+                include: {
+                    booking: {
+                        include: {
+                            player: {
+                                select: {
+                                    firstName: true,
+                                    lastName: true
+                                }
+                            }
+                        }
+                    }
+                },
+                orderBy: { paidAt: 'desc' }
+            });
+
+            return transactions.map(transaction => ({
+                bookingId: transaction.bookingId,
+                player_name: `${transaction.booking.player.firstName} ${transaction.booking.player.lastName}`,
+                date: transaction.paidAt.toISOString().split('T')[0],
+                amount: transaction.amount
+            }));
         } catch (err) {
             throw err;
         }
     },
 
-    // 5. Payment History for Profit Dashboard
     fetchPaymentHistoryForMyProfit: async (ownerId) => {
         try {
-            const queryStr = `
-                SELECT p.paymentId, p.paymentDesc AS payment_description, DATE(p.paid_at) AS date, p.amount
-                FROM payments p
-                WHERE p.ownerId = ? AND p.playerId IS NULL
-                ORDER BY p.paid_at DESC;
-            `;
-            const [rows] = await query(queryStr, [ownerId]);
-            return rows;
+            const payments = await prisma.payment.findMany({
+                where: {
+                    ownerId: parseInt(ownerId),
+                    playerId: null
+                },
+                orderBy: { paidAt: 'desc' },
+                select: {
+                    paymentId: true,
+                    paymentDesc: true,
+                    paidAt: true,
+                    amount: true
+                }
+            });
+
+            return payments.map(payment => ({
+                paymentId: payment.paymentId,
+                payment_description: payment.paymentDesc,
+                date: payment.paidAt.toISOString().split('T')[0],
+                amount: payment.amount
+            }));
         } catch (err) {
             throw err;
         }
     },
 
-
-    //For courtwise Profit Page
-    // Get all arenas for a specific owner
     fetchOwnerArenas: async (ownerId) => {
         try {
-            const queryStr = `
-                SELECT arenaId, name, city, country 
-                FROM arenas 
-                WHERE owner_id = ? AND paidStatus = 'Paid'
-                ORDER BY name ASC
-            `;
-            const [rows] = await query(queryStr, [ownerId]);
-            return rows;
+            const arenas = await prisma.arena.findMany({
+                where: {
+                    ownerId: parseInt(ownerId),
+                    paidStatus: 'Paid'
+                },
+                select: {
+                    arenaId: true,
+                    name: true,
+                    city: true,
+                    country: true
+                },
+                orderBy: { name: 'asc' }
+            });
+            return arenas;
         } catch (err) {
             throw err;
         }
     },
 
-    // Get arena details by ID
     fetchArenaDetails: async (arenaId) => {
         try {
-            const queryStr = `
-                SELECT arenaId, name, city, country, description
-                FROM arenas 
-                WHERE arenaId = ?
-            `;
-            const [rows] = await query(queryStr, [arenaId]);
-            return rows[0] || null;
+            const arena = await prisma.arena.findUnique({
+                where: { arenaId: parseInt(arenaId) },
+                select: {
+                    arenaId: true,
+                    name: true,
+                    city: true,
+                    country: true,
+                    description: true
+                }
+            });
+            return arena || null;
         } catch (err) {
             throw err;
         }
     },
 
-    // Get yearly chart data by courts for a specific arena
     fetchArenaCourtYearlyData: async (arenaId, year = new Date().getFullYear()) => {
         try {
-            const queryStr = `
-                SELECT 
-                    c.name AS court_name,
-                    MONTH(p.paid_at) AS month,
-                    SUM(p.amount) AS total
-                FROM payments p
-                JOIN bookings b ON p.bookingId = b.bookingId
-                JOIN courts c ON b.courtId = c.courtId
-                WHERE c.arenaId = ? AND YEAR(p.paid_at) = ?
-                GROUP BY c.courtId, c.name, MONTH(p.paid_at)
-                ORDER BY c.name, MONTH(p.paid_at)
-            `;
-            const [rows] = await query(queryStr, [arenaId, year]);
+            const payments = await prisma.payment.findMany({
+                where: {
+                    booking: {
+                        court: {
+                            arenaId: parseInt(arenaId)
+                        }
+                    },
+                    paidAt: {
+                        gte: new Date(`${year}-01-01`),
+                        lt: new Date(`${year + 1}-01-01`)
+                    }
+                },
+                include: {
+                    booking: {
+                        include: {
+                            court: {
+                                select: { name: true }
+                            }
+                        }
+                    }
+                }
+            });
 
-            // Get unique court names
-            const courtNames = [...new Set(rows.map(row => row.court_name))];
+            const courtNames = [...new Set(payments.map(p => p.booking.court.name))];
 
             const chartData = {
                 labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
                 datasets: []
             };
 
-            // If no data, return empty chart
-            if (!rows || rows.length === 0) {
+            if (!payments || payments.length === 0) {
                 return chartData;
             }
 
-            // Create dataset for each court
             courtNames.forEach(courtName => {
                 const courtData = Array(12).fill(0);
-                rows.forEach(row => {
-                    if (row.court_name === courtName) {
-                        courtData[row.month - 1] = row.total;
+                payments.forEach(payment => {
+                    if (payment.booking.court.name === courtName) {
+                        const month = payment.paidAt.getMonth();
+                        courtData[month] += parseFloat(payment.amount);
                     }
                 });
 
@@ -487,66 +626,130 @@ fetchMonthlyChartData: async (ownerId, year = new Date().getFullYear(), month = 
         }
     },
 
-    // Courtwise Profit page's new changes
-    // Get Top 3 Highest-Earning Courts in Last 3 Months
     fetchTopEarningCourts: async (ownerId) => {
         try {
-            const queryStr = `
-                SELECT 
-                    c.name AS court_name,
-                    a.name AS arena_name,
-                    SUM(p.amount) AS total_revenue,
-                    COUNT(b.bookingId) AS booking_count,
-                    ROUND(SUM(p.amount) / COUNT(b.bookingId), 2) AS avg_revenue_per_booking
-                FROM bookings b
-                JOIN payments p ON b.bookingId = p.bookingId
-                JOIN courts c ON b.courtId = c.courtId
-                JOIN arenas a ON c.arenaId = a.arenaId
-                WHERE b.ownerId = ?
-                AND p.paid_at >= CURDATE() - INTERVAL 3 MONTH
-                GROUP BY c.courtId
-                ORDER BY total_revenue DESC
-                LIMIT 3
-            `;
-            const [rows] = await query(queryStr, [ownerId]);
-            return rows;
+            const threeMonthsAgo = new Date();
+            threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+
+            const courtRevenue = await prisma.payment.groupBy({
+                by: ['bookingId'],
+                where: {
+                    booking: {
+                        ownerId: parseInt(ownerId)
+                    },
+                    paidAt: {
+                        gte: threeMonthsAgo
+                    }
+                },
+                _sum: { amount: true },
+                _count: { bookingId: true }
+            });
+
+            // Get detailed court and arena info for each booking
+            const detailedResults = await Promise.all(
+                courtRevenue.map(async (revenue) => {
+                    const booking = await prisma.booking.findUnique({
+                        where: { bookingId: revenue.bookingId },
+                        include: {
+                            court: { select: { name: true } },
+                            arena: { select: { name: true } }
+                        }
+                    });
+                    
+                    return {
+                        court_name: booking.court.name,
+                        arena_name: booking.arena.name,
+                        total_revenue: revenue._sum.amount,
+                        booking_count: revenue._count.bookingId,
+                        avg_revenue_per_booking: parseFloat((revenue._sum.amount / revenue._count.bookingId).toFixed(2))
+                    };
+                })
+            );
+
+            // Group by court and sum revenues
+            const courtGroups = {};
+            detailedResults.forEach(result => {
+                const key = `${result.court_name}_${result.arena_name}`;
+                if (!courtGroups[key]) {
+                    courtGroups[key] = {
+                        court_name: result.court_name,
+                        arena_name: result.arena_name,
+                        total_revenue: 0,
+                        booking_count: 0
+                    };
+                }
+                courtGroups[key].total_revenue += parseFloat(result.total_revenue);
+                courtGroups[key].booking_count += result.booking_count;
+            });
+
+            // Convert to array and calculate averages
+            const results = Object.values(courtGroups).map(court => ({
+                ...court,
+                avg_revenue_per_booking: parseFloat((court.total_revenue / court.booking_count).toFixed(2))
+            }));
+
+            // Sort by revenue and take top 3
+            results.sort((a, b) => b.total_revenue - a.total_revenue);
+            return results.slice(0, 3);
         } catch (err) {
             throw err;
         }
     },
 
-    // Analyze Player Behavior (Repeat vs New) in Last 3 Months
     analyzePlayerBehaviorLast3Months: async (ownerId) => {
         try {
-            const queryStr = `
-                SELECT 
-                    u.userId,
-                    CONCAT(u.firstName, ' ', u.lastName) AS player_name,
-                    COUNT(b.bookingId) AS booking_count,
-                    SUM(p.amount) AS total_paid,
-                    (
-                        SELECT COUNT(*) 
-                        FROM bookings b2
-                        WHERE b2.playerId = b.playerId
-                        AND b2.booking_date < CURDATE() - INTERVAL 3 MONTH
-                        AND b2.ownerId = ?
-                    ) AS previous_bookings
-                FROM bookings b
-                JOIN users u ON b.playerId = u.userId
-                JOIN payments p ON p.bookingId = b.bookingId
-                WHERE b.ownerId = ?
-                AND b.booking_date >= CURDATE() - INTERVAL 3 MONTH
-                GROUP BY u.userId, u.firstName, u.lastName
-            `;
-            const [rows] = await query(queryStr, [ownerId, ownerId]);
+            const threeMonthsAgo = new Date();
+            threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
 
-            // Add player type flag to each record
-            const result = rows.map(row => ({
-                ...row,
-                player_type: row.previous_bookings > 0 ? "Repeat" : "New"
-            }));
+            const recentBookings = await prisma.booking.findMany({
+                where: {
+                    ownerId: parseInt(ownerId),
+                    bookingDate: { gte: threeMonthsAgo }
+                },
+                include: {
+                    player: {
+                        select: {
+                            userId: true,
+                            firstName: true,
+                            lastName: true
+                        }
+                    },
+                    payments: {
+                        select: { amount: true }
+                    }
+                }
+            });
 
-            return result;
+            // Group by player and calculate stats
+            const playerGroups = {};
+            for (const booking of recentBookings) {
+                const playerId = booking.player.userId;
+                if (!playerGroups[playerId]) {
+                    // Check for previous bookings before 3 months ago
+                    const previousBookings = await prisma.booking.count({
+                        where: {
+                            playerId: playerId,
+                            ownerId: parseInt(ownerId),
+                            bookingDate: { lt: threeMonthsAgo }
+                        }
+                    });
+
+                    playerGroups[playerId] = {
+                        userId: playerId,
+                        player_name: `${booking.player.firstName} ${booking.player.lastName}`,
+                        booking_count: 0,
+                        total_paid: 0,
+                        previous_bookings: previousBookings,
+                        player_type: previousBookings > 0 ? "Repeat" : "New"
+                    };
+                }
+                
+                playerGroups[playerId].booking_count++;
+                const paymentAmount = booking.payments.reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
+                playerGroups[playerId].total_paid += paymentAmount;
+            }
+
+            return Object.values(playerGroups);
         } catch (err) {
             throw err;
         }
@@ -554,11 +757,15 @@ fetchMonthlyChartData: async (ownerId, year = new Date().getFullYear(), month = 
 
     updatePaymentsTableForArenaAdd: async (arenaId, total, ownerId, paymentDesc, payment_method) => {
         try {
-            const queryStr = `
-                INSERT INTO payments (arenaId, amount, ownerId, paymentDesc, payment_method)
-                VALUES (?, ?, ?, ?, ?)
-            `;
-            await query(queryStr, [arenaId, total, ownerId, paymentDesc, payment_method]);
+            await prisma.payment.create({
+                data: {
+                    arenaId: parseInt(arenaId),
+                    amount: parseFloat(total),
+                    ownerId: parseInt(ownerId),
+                    paymentDesc: paymentDesc,
+                    paymentMethod: payment_method
+                }
+            });
             return { message: "Payment record updated successfully" };
         } catch (err) {
             throw err;
@@ -566,34 +773,39 @@ fetchMonthlyChartData: async (ownerId, year = new Date().getFullYear(), month = 
     },
 
     fetchArenaRevenueDistribution: async (ownerId, year) => {
-        
-            const sql = `
-                        SELECT a.name, SUM(p.amount) AS total
-                        FROM payments p
-                        JOIN arenas a ON p.arenaId = a.arenaId
-                        WHERE p.ownerId = ? 
-                        AND p.playerId IS NOT NULL
-                        AND YEAR(p.paid_at) = ?
-                        GROUP BY a.name
-                    `;
-            const [results] = await query(sql, [ownerId, year]);
+        try {
+            const revenues = await prisma.payment.groupBy({
+                by: ['arenaId'],
+                where: {
+                    ownerId: parseInt(ownerId),
+                    playerId: { not: null },
+                    paidAt: {
+                        gte: new Date(`${year}-01-01`),
+                        lt: new Date(`${year + 1}-01-01`)
+                    }
+                },
+                _sum: { amount: true }
+            });
+
+            const results = await Promise.all(
+                revenues.map(async (revenue) => {
+                    const arena = await prisma.arena.findUnique({
+                        where: { arenaId: revenue.arenaId },
+                        select: { name: true }
+                    });
+                    
+                    return {
+                        name: arena.name,
+                        total: revenue._sum.amount
+                    };
+                })
+            );
+
             return results;
-        
-
-    },
-}
-
-
-
-
-// Helper: Wrap db.query in a Promise
-function query(sql, params) {
-    return new Promise((resolve, reject) => {
-        db.query(sql, params, (err, results) => {
-            if (err) return reject(err);
-            resolve([results]);
-        });
-    });
-}
+        } catch (err) {
+            throw err;
+        }
+    }
+};
 
 module.exports = OwnerDashboard;

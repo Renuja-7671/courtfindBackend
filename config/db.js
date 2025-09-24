@@ -1,20 +1,29 @@
-const mysql = require('mysql2');
-require('dotenv').config();
+const prisma = require('../prisma/client');
 
-const db = mysql.createConnection({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    port: process.env.DB_PORT,
-});
+// Test database connection
+const testConnection = async () => {
+  try {
+    await prisma.$connect();
+    console.log('✅ Connected to MySQL database with Prisma');
+  } catch (error) {
+    console.error('❌ Database connection failed:', error);
+    process.exit(1);
+  }
+};
 
-db.connect((err) => {
-    if (err) {
-        console.error('Database connection failed:', err);
-    } else {
-        console.log('Connected to MySQL');
-    }
-});
+// Graceful shutdown
+const gracefulShutdown = async () => {
+  try {
+    await prisma.$disconnect();
+    console.log('Database connection closed.');
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during graceful shutdown:', error);
+    process.exit(1);
+  }
+};
 
-module.exports = db;
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
+
+module.exports = { prisma, testConnection };

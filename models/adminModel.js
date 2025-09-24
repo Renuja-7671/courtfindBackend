@@ -1,390 +1,489 @@
-const db = require('../config/db'); // MySQL connection
+const prisma = require('../prisma/client');
 
 const AdminModel = {
   // Admin Profile Methods
-  getAdminProfile: (userId) => {
-    return new Promise((resolve, reject) => {
-      const query = 'SELECT firstName, lastName, email FROM users WHERE userId = ?';
-      db.query(query, [userId], (err, results) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(results);
+  getAdminProfile: async (userId) => {
+    try {
+      const admin = await prisma.user.findUnique({
+        where: { userId: parseInt(userId) },
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true
         }
       });
-    });
+      
+      return admin ? [admin] : [];
+    } catch (error) {
+      console.error('Error getting admin profile:', error);
+      throw error;
+    }
   },
 
-  updateAdminProfile: (userId, userData) => {
-    return new Promise((resolve, reject) => {
+  updateAdminProfile: async (userId, userData) => {
+    try {
       const { firstName, lastName, email } = userData;
-      const query = 'UPDATE users SET firstName = ?, lastName = ?, email = ? WHERE userId = ?';
-      
-      db.query(query, [firstName, lastName || '', email, userId], (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
+      const updatedAdmin = await prisma.user.update({
+        where: { userId: parseInt(userId) },
+        data: {
+          firstName: firstName,
+          lastName: lastName || '',
+          email: email
         }
       });
-    });
+      
+      return updatedAdmin;
+    } catch (error) {
+      console.error('Error updating admin profile:', error);
+      throw error;
+    }
   },
 
   // Pricing Methods
-  getAllPricing: () => {
-    return new Promise((resolve, reject) => {
-      const query = 'SELECT * FROM pricing ORDER BY id ASC';
-      
-      db.query(query, (err, results) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(results);
-        }
+
+  // Only get the price for new arena addition
+  getArenaAdditionPricing: async () => {
+    try {
+      const pricing = await prisma.pricing.findFirst({
+        where: { activityName: "Price for new arena addition" },
       });
-    });
+      return pricing;
+    } catch (error) {
+      console.error('Error getting arena addition pricing:', error);
+      throw error;
+    }
   },
 
-  updatePricing: (pricingData) => {
-    return new Promise((resolve, reject) => {
-      const { id, activity_name, price } = pricingData;
-      const query = 'UPDATE pricing SET activity_name = ?, price = ? WHERE id = ?';
-      
-      db.query(query, [activity_name, price, id], (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
+  updatePricing: async (pricingData) => {
+    try {
+      const { id, price } = pricingData;
+      const updatedPricing = await prisma.pricing.update({
+        where: { id: parseInt(id) },
+        data: {
+          activityName: "Price for new arena addition",
+          price: parseFloat(price)
         }
       });
-    });
+      return updatedPricing;
+    } catch (error) {
+      console.error('Error updating pricing:', error);
+      throw error;
+    }
   },
 
-  addPricing: (pricingData) => {
-    return new Promise((resolve, reject) => {
-      const { activity_name, price } = pricingData;
-      const query = 'INSERT INTO pricing (activity_name, price) VALUES (?, ?)';
-      
-      db.query(query, [activity_name, price], (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
+  addPricing: async (pricingData) => {
+    try {
+      const { price } = pricingData;
+      // Check if already exists
+      const existing = await prisma.pricing.findFirst({ where: { activityName: "Price for new arena addition" } });
+      if (existing) {
+        throw new Error('Pricing for new arena addition already exists');
+      }
+      const newPricing = await prisma.pricing.create({
+        data: {
+          activityName: "Price for new arena addition",
+          price: parseFloat(price)
         }
       });
-    });
+      return newPricing;
+    } catch (error) {
+      console.error('Error adding pricing:', error);
+      throw error;
+    }
   },
 
-  deletePricing: (id) => {
-    return new Promise((resolve, reject) => {
-      const query = 'DELETE FROM pricing WHERE id = ?';
-      
-      db.query(query, [id], (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
+  deletePricing: async (id) => {
+    try {
+      const deletedPricing = await prisma.pricing.delete({
+        where: { id: parseInt(id) }
       });
-    });
+      
+      return deletedPricing;
+    } catch (error) {
+      console.error('Error deleting pricing:', error);
+      throw error;
+    }
   },
 
   // Player Management Methods
-  getAllPlayers: (searchParams) => {
-    return new Promise((resolve, reject) => {
+  getAllPlayers: async (searchParams) => {
+    try {
       const { search, page = 1, limit = 10 } = searchParams;
       
-      let query = 'SELECT userId, firstName, lastName, email, mobile, country, province, zip, address, created_at FROM users WHERE role = ?';
-      let queryParams = ['Player'];
+      const whereClause = { role: 'Player' };
       
       // Add search functionality
       if (search && search.trim()) {
-        query += ' AND (firstName LIKE ? OR lastName LIKE ? OR CONCAT(firstName, " ", lastName) LIKE ?)';
-        const searchTerm = `%${search.trim()}%`;
-        queryParams.push(searchTerm, searchTerm, searchTerm);
+        const searchTerm = search.trim();
+        whereClause.OR = [
+          { firstName: { contains: searchTerm, mode: 'insensitive' } },
+          { lastName: { contains: searchTerm, mode: 'insensitive' } }
+        ];
       }
       
-      // Add ordering
-      query += ' ORDER BY created_at DESC';
-      
-      // Add pagination
-      const offset = (page - 1) * limit;
-      query += ' LIMIT ? OFFSET ?';
-      queryParams.push(parseInt(limit), offset);
-      
-      db.query(query, queryParams, (err, results) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(results);
-        }
+      const players = await prisma.user.findMany({
+        where: whereClause,
+        select: {
+          userId: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          mobile: true,
+          country: true,
+          province: true,
+          zip: true,
+          address: true,
+          createdAt: true
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: parseInt(limit)
       });
-    });
-  },
-
-  getPlayersCount: (search) => {
-    return new Promise((resolve, reject) => {
-      let countQuery = 'SELECT COUNT(*) as total FROM users WHERE role = ?';
-      let countParams = ['Player'];
       
-      if (search && search.trim()) {
-        countQuery += ' AND (firstName LIKE ? OR lastName LIKE ? OR CONCAT(firstName, " ", lastName) LIKE ?)';
-        const searchTerm = `%${search.trim()}%`;
-        countParams.push(searchTerm, searchTerm, searchTerm);
-      }
-      
-      db.query(countQuery, countParams, (err, results) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(results[0].total);
-        }
-      });
-    });
-  },
-
-  getPlayerById: (id) => {
-    return new Promise((resolve, reject) => {
-      const query = 'SELECT userId, firstName, lastName, email, mobile, country, province, zip, address, created_at FROM users WHERE userId = ? AND role = ?';
-      
-      db.query(query, [id, 'Player'], (err, results) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(results);
-        }
-      });
-    });
-  },
-
-  deletePlayer: (id) => {
-    return new Promise((resolve, reject) => {
-      const query = 'DELETE FROM users WHERE userId = ? AND role = ?';
-      
-      db.query(query, [id, 'Player'], (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
-  },
-
-
-// Owner Management Methods
-  getAllOwners: (searchParams) => {
-    return new Promise((resolve, reject) => {
-      const { search, page = 1, limit = 10 } = searchParams;
-      
-      let query = 'SELECT userId, firstName, lastName, email, mobile, country, province, zip, address, created_at FROM users WHERE role = ?';
-      let queryParams = ['Owner'];
-      
-      // Add search functionality
-      if (search && search.trim()) {
-        query += ' AND (firstName LIKE ? OR lastName LIKE ? OR CONCAT(firstName, " ", lastName) LIKE ?)';
-        const searchTerm = `%${search.trim()}%`;
-        queryParams.push(searchTerm, searchTerm, searchTerm);
-      }
-      
-      // Add ordering
-      query += ' ORDER BY created_at DESC';
-      
-      // Add pagination
-      const offset = (page - 1) * limit;
-      query += ' LIMIT ? OFFSET ?';
-      queryParams.push(parseInt(limit), offset);
-      
-      db.query(query, queryParams, (err, results) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(results);
-        }
-      });
-    });
-  },
-
-  getOwnersCount: (search) => {
-    return new Promise((resolve, reject) => {
-      let countQuery = 'SELECT COUNT(*) as total FROM users WHERE role = ?';
-      let countParams = ['Owner'];
-      
-      if (search && search.trim()) {
-        countQuery += ' AND (firstName LIKE ? OR lastName LIKE ? OR CONCAT(firstName, " ", lastName) LIKE ?)';
-        const searchTerm = `%${search.trim()}%`;
-        countParams.push(searchTerm, searchTerm, searchTerm);
-      }
-      
-      db.query(countQuery, countParams, (err, results) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(results[0].total);
-        }
-      });
-    });
-  },
-
-  getOwnerById: (id) => {
-    return new Promise((resolve, reject) => {
-      const query = 'SELECT userId, firstName, lastName, email, mobile, country, province, zip, address, created_at FROM users WHERE userId = ? AND role = ?';
-      
-      db.query(query, [id, 'Owner'], (err, results) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(results);
-        }
-      });
-    });
-  },
-
-  deleteOwner: (id) => {
-    return new Promise((resolve, reject) => {
-      const query = 'DELETE FROM users WHERE userId = ? AND role = ?';
-      
-      db.query(query, [id, 'Owner'], (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
-  },
-//tottal users for analytics
-  getTotalUsersCount: (search) => {
-  return new Promise((resolve, reject) => {
-    let countQuery = 'SELECT COUNT(*) as total FROM users WHERE role != ?';
-    let countParams = ['Admin'];
-    
-    if (search && search.trim()) {
-      countQuery += ' AND (firstName LIKE ? OR lastName LIKE ? OR CONCAT(firstName, " ", lastName) LIKE ?)';
-      const searchTerm = `%${search.trim()}%`;
-      countParams.push(searchTerm, searchTerm, searchTerm);
+      // Transform to match original structure
+      return players.map(player => ({
+        ...player,
+        created_at: player.createdAt
+      }));
+    } catch (error) {
+      console.error('Error getting all players:', error);
+      throw error;
     }
-    
-    db.query(countQuery, countParams, (err, results) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(results[0].total);
+  },
+
+  getPlayersCount: async (search) => {
+    try {
+      const whereClause = { role: 'Player' };
+      
+      if (search && search.trim()) {
+        const searchTerm = search.trim();
+        whereClause.OR = [
+          { firstName: { contains: searchTerm, mode: 'insensitive' } },
+          { lastName: { contains: searchTerm, mode: 'insensitive' } }
+        ];
       }
-    });
-  });
-},
+      
+      const count = await prisma.user.count({
+        where: whereClause
+      });
+      
+      return count;
+    } catch (error) {
+      console.error('Error getting players count:', error);
+      throw error;
+    }
+  },
 
-
-//get tot revenue for analytics
-
-getTotalRevenue: () => {
-  return new Promise((resolve, reject) => {
-    const query = 'SELECT SUM(amount) as totalRevenue FROM payments';
-    db.query(query, (err, results) => {
-      if (err) {
-        reject(err);
-      } else {
-        // If there are no revenue entries, return 0 as the total
-        const totalRevenue = results[0].totalRevenue || 0;
-        resolve(totalRevenue);
-      }
-    });
-  });
-},
-
-getRevenueByActivity: () => {
-  return new Promise((resolve, reject) => {
-    const query = `
-      SELECT a.name as activity_name, SUM(p.amount) as total_amount
-      FROM payments p
-      join arenas a on p.arenaId = a.arenaId
-      GROUP BY a.name
-    `;
-    db.query(query, (err, results) => {
-      if (err) {
-        reject(err);
-      } else {
-        const data = results.map(row => ({
-          activity_name: row.activity_name,
-          total_amount: parseFloat(row.total_amount) || 0
-        }));
-        resolve(data);
-      }
-    });
-  });
-},
-
-getTopRatedArenas: () => {
-  return new Promise((resolve, reject) => {
-    const query = `
-      SELECT a.arenaId, a.name, a.city, a.country, AVG(r.rating) as average_rating
-      FROM arenas a
-      LEFT JOIN reviews r ON a.arenaId = r.arenaId
-      GROUP BY a.arenaId, a.name, a.city, a.country
-      ORDER BY average_rating DESC
-    `;
-    db.query(query, (err, results) => {
-      if (err) {
-        reject(err);
-      } else {
-        const data = results.map(row => ({
-          arenaId: row.arenaId,
-          name: row.name,
-          city: row.city,
-          country: row.country,
-          average_rating: parseFloat(row.average_rating) || 0
-        }));
-        resolve(data);
-      }
-    });
-  });
-},
-
-
-
-getMonthlyRevenueAnalysis: (month, year) => {
-  return new Promise((resolve, reject) => {
-    const query = `
-      SELECT 
-      REGEXP_REPLACE(paymentDesc, '[0-9:]+', '') AS activity_name,
-      COUNT(*) AS count,
-      SUM(amount) AS total_amount
-      from payments
-      WHERE DATE_FORMAT(paid_at, '%Y-%m') = ?
-      GROUP BY activity_name
-    `;
-    db.query(query, [`${year}-${month.toString().padStart(2, '0')}`], (err, results) => {
-      if (err) {
-        reject(err);
-      } else {
-        const data = results.map(row => ({
-          activity_name: row.activity_name,
-          total_amount: parseFloat(row.total_amount) || 0
-        }));
-        resolve(data);
-      }
-    });
-  });
-},
-
-getRevenueBreakdown: () => {
-    return new Promise((resolve, reject) => {
-      const query = `
-        SELECT 
-          COALESCE((SELECT SUM(amount) FROM payments WHERE playerId IS NULL), 0) as adminRevenue,
-          COALESCE((SELECT SUM(amount) FROM payments WHERE playerId IS NOT NULL), 0) as ownerRevenue
-      `;
-      db.query(query, (err, results) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(results[0]); // Return the first row with both revenues
+  getPlayerById: async (id) => {
+    try {
+      const player = await prisma.user.findFirst({
+        where: {
+          userId: parseInt(id),
+          role: 'Player'
+        },
+        select: {
+          userId: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          mobile: true,
+          country: true,
+          province: true,
+          zip: true,
+          address: true,
+          createdAt: true
         }
       });
-    });
-  }
+      
+      return player ? [{ ...player, created_at: player.createdAt }] : [];
+    } catch (error) {
+      console.error('Error getting player by ID:', error);
+      throw error;
+    }
+  },
 
+  deletePlayer: async (id) => {
+    try {
+      const deletedPlayer = await prisma.user.delete({
+        where: { userId: parseInt(id) }
+      });
+      
+      return deletedPlayer;
+    } catch (error) {
+      console.error('Error deleting player:', error);
+      throw error;
+    }
+  },
+
+  // Owner Management Methods
+  getAllOwners: async (searchParams) => {
+    try {
+      const { search, page = 1, limit = 10 } = searchParams;
+      
+      const whereClause = { role: 'Owner' };
+      
+      // Add search functionality
+      if (search && search.trim()) {
+        const searchTerm = search.trim();
+        whereClause.OR = [
+          { firstName: { contains: searchTerm, mode: 'insensitive' } },
+          { lastName: { contains: searchTerm, mode: 'insensitive' } }
+        ];
+      }
+      
+      const owners = await prisma.user.findMany({
+        where: whereClause,
+        select: {
+          userId: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          mobile: true,
+          country: true,
+          province: true,
+          zip: true,
+          address: true,
+          createdAt: true
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: parseInt(limit)
+      });
+      
+      // Transform to match original structure
+      return owners.map(owner => ({
+        ...owner,
+        created_at: owner.createdAt
+      }));
+    } catch (error) {
+      console.error('Error getting all owners:', error);
+      throw error;
+    }
+  },
+
+  getOwnersCount: async (search) => {
+    try {
+      const whereClause = { role: 'Owner' };
+      
+      if (search && search.trim()) {
+        const searchTerm = search.trim();
+        whereClause.OR = [
+          { firstName: { contains: searchTerm, mode: 'insensitive' } },
+          { lastName: { contains: searchTerm, mode: 'insensitive' } }
+        ];
+      }
+      
+      const count = await prisma.user.count({
+        where: whereClause
+      });
+      
+      return count;
+    } catch (error) {
+      console.error('Error getting owners count:', error);
+      throw error;
+    }
+  },
+
+  getOwnerById: async (id) => {
+    try {
+      const owner = await prisma.user.findFirst({
+        where: {
+          userId: parseInt(id),
+          role: 'Owner'
+        },
+        select: {
+          userId: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          mobile: true,
+          country: true,
+          province: true,
+          zip: true,
+          address: true,
+          createdAt: true
+        }
+      });
+      
+      return owner ? [{ ...owner, created_at: owner.createdAt }] : [];
+    } catch (error) {
+      console.error('Error getting owner by ID:', error);
+      throw error;
+    }
+  },
+
+  deleteOwner: async (id) => {
+    try {
+      const deletedOwner = await prisma.user.delete({
+        where: { userId: parseInt(id) }
+      });
+      
+      return deletedOwner;
+    } catch (error) {
+      console.error('Error deleting owner:', error);
+      throw error;
+    }
+  },
+
+  // Total users for analytics
+  getTotalUsersCount: async (search) => {
+    try {
+      const whereClause = {
+        role: { not: 'Admin' }
+      };
+      
+      if (search && search.trim()) {
+        const searchTerm = search.trim();
+        whereClause.OR = [
+          { firstName: { contains: searchTerm, mode: 'insensitive' } },
+          { lastName: { contains: searchTerm, mode: 'insensitive' } }
+        ];
+      }
+      
+      const count = await prisma.user.count({
+        where: whereClause
+      });
+      
+      return count;
+    } catch (error) {
+      console.error('Error getting total users count:', error);
+      throw error;
+    }
+  },
+
+  // Get total revenue for analytics
+  getTotalRevenue: async () => {
+    try {
+      const result = await prisma.payment.aggregate({
+        _sum: { amount: true }
+      });
+      
+      return result._sum.amount || 0;
+    } catch (error) {
+      console.error('Error getting total revenue:', error);
+      throw error;
+    }
+  },
+
+  getRevenueByActivity: async () => {
+    try {
+      const revenues = await prisma.payment.groupBy({
+        by: ['arenaId'],
+        where: {
+          arenaId: { not: null }
+        },
+        _sum: { amount: true }
+      });
+      
+      // Get arena names for each group
+      const data = await Promise.all(
+        revenues.map(async (revenue) => {
+          const arena = await prisma.arena.findUnique({
+            where: { arenaId: revenue.arenaId },
+            select: { name: true }
+          });
+          
+          return {
+            activity_name: arena?.name || 'Unknown',
+            total_amount: parseFloat(revenue._sum.amount) || 0
+          };
+        })
+      );
+      
+      return data;
+    } catch (error) {
+      console.error('Error getting revenue by activity:', error);
+      throw error;
+    }
+  },
+
+  getTopRatedArenas: async () => {
+    try {
+      const arenas = await prisma.arena.findMany({
+        include: {
+          reviews: {
+            select: { rating: true }
+          }
+        }
+      });
+      
+      const data = arenas.map(arena => {
+        const ratings = arena.reviews.map(review => review.rating);
+        const averageRating = ratings.length > 0
+          ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length
+          : 0;
+        
+        return {
+          arenaId: arena.arenaId,
+          name: arena.name,
+          city: arena.city,
+          country: arena.country,
+          average_rating: parseFloat(averageRating.toFixed(2))
+        };
+      }).sort((a, b) => b.average_rating - a.average_rating);
+      
+      return data;
+    } catch (error) {
+      console.error('Error getting top rated arenas:', error);
+      throw error;
+    }
+  },
+
+  getMonthlyRevenueAnalysis: async (month, year) => {
+    try {
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0);
+      
+      const payments = await prisma.payment.groupBy({
+        by: ['paymentDesc'],
+        where: {
+          paidAt: {
+            gte: startDate,
+            lte: endDate
+          }
+        },
+        _count: { paymentId: true },
+        _sum: { amount: true }
+      });
+      
+      const data = payments.map(payment => {
+        // Remove numbers and colons from payment description (similar to REGEXP_REPLACE)
+        const activityName = payment.paymentDesc?.replace(/[0-9:]+/g, '') || 'Unknown';
+        
+        return {
+          activity_name: activityName,
+          total_amount: parseFloat(payment._sum.amount) || 0
+        };
+      });
+      
+      return data;
+    } catch (error) {
+      console.error('Error getting monthly revenue analysis:', error);
+      throw error;
+    }
+  },
+
+  getRevenueBreakdown: async () => {
+    try {
+      const adminRevenue = await prisma.payment.aggregate({
+        where: { playerId: null },
+        _sum: { amount: true }
+      });
+      
+      const ownerRevenue = await prisma.payment.aggregate({
+        where: { playerId: { not: null } },
+        _sum: { amount: true }
+      });
+      
+      return {
+        adminRevenue: adminRevenue._sum.amount || 0,
+        ownerRevenue: ownerRevenue._sum.amount || 0
+      };
+    } catch (error) {
+      console.error('Error getting revenue breakdown:', error);
+      throw error;
+    }
+  }
 };
 
 module.exports = AdminModel;

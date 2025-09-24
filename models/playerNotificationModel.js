@@ -1,28 +1,65 @@
-const db = require('../config/db');
+const prisma = require('../prisma/client');
 
 const NotificationModel = {
-    getUpcomingSessions: (playerId, callback) => {
-        const query = `
-            SELECT 
-                b.bookingId, 
-                b.booking_date, 
-                b.start_time, 
-                b.end_time, 
-                c.name AS courtName, 
-                a.name AS arenaName
-            FROM bookings b
-            JOIN courts c ON b.courtId = c.courtId
-            JOIN arenas a ON c.arenaId = a.arenaId
-            WHERE b.playerId = ? 
-              AND b.status = 'Booked'
-              AND (
-                  DATE(b.booking_date) = CURDATE() + INTERVAL 1 DAY 
-                  OR (DATE(b.booking_date) = CURDATE() AND TIMESTAMPDIFF(HOUR, NOW(), CONCAT(b.booking_date, ' ', b.start_time)) BETWEEN 0 AND 2)
-              )
-            ORDER BY b.booking_date, b.start_time
-        `;
-        db.query(query, [playerId], callback);
-    },
+    getUpcomingSessions: async (playerId) => {
+        try {
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const twoHoursFromNow = new Date(now.getTime() + (2 * 60 * 60 * 1000));
+
+            const upcomingSessions = await prisma.booking.findMany({
+                where: {
+                    playerId: parseInt(playerId),
+                    status: 'Booked',
+                    OR: [
+                        // Tomorrow's bookings
+                        {
+                            bookingDate: tomorrow
+                        },
+                        // Today's bookings within next 2 hours
+                        {
+                            AND: [
+                                { bookingDate: today },
+                                { startTime: { gte: now } },
+                                { startTime: { lte: twoHoursFromNow } }
+                            ]
+                        }
+                    ]
+                },
+                include: {
+                    court: {
+                        select: {
+                            name: true,
+                            arena: {
+                                select: {
+                                    name: true
+                                }
+                            }
+                        }
+                    }
+                },
+                orderBy: [
+                    { bookingDate: 'asc' },
+                    { startTime: 'asc' }
+                ]
+            });
+
+            // Transform to match original structure
+            return upcomingSessions.map(session => ({
+                bookingId: session.bookingId,
+                booking_date: session.bookingDate,
+                start_time: session.startTime,
+                end_time: session.endTime,
+                courtName: session.court.name,
+                arenaName: session.court.arena.name
+            }));
+        } catch (error) {
+            console.error('Error getting upcoming sessions:', error);
+            throw error;
+        }
+    }
 };
 
 module.exports = NotificationModel;
