@@ -4,10 +4,11 @@ const { generateInvoicePDF } = require("../services/invoiceService");
 const { uploadPDFToCloudinary } = require("../utils/cloudinaryUpload");
 const fs = require("fs");
 
+const nodemailer = require("nodemailer");
+
 exports.handleInvoiceGeneration = async (req, res) => {
   const { bookingId } = req.params;
 
-  console.log('=== BOOKING INVOICE GENERATION START ===');
   console.log('Booking ID:', bookingId);
 
   try {
@@ -69,6 +70,113 @@ exports.handleInvoiceGeneration = async (req, res) => {
     // Step 7: Update database with Cloudinary URL
     await PlayerBooking.updateInvoiceAndPaymentStatus(bookingId, cloudinaryUrl);
     console.log('Booking updated with invoice URL');
+
+    // Step 8: Send invoice link via email to customer
+    try {
+      // Setup nodemailer transporter
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASS
+        }
+      });
+
+      const mailOptions = {
+        from: `Courtfind <${process.env.EMAIL_USER}>`,
+        to: booking.email,
+        subject: 'Courtfind Booking Invoice',
+        html: `<div class="email-container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">COURTFIND</div>
+            <div class="header-subtitle">Your Sports Arena Booking Platform</div>
+            <div class="success-icon"></div>
+        </div>
+        
+        <!-- Content -->
+        <div class="content">
+            <h1 class="greeting">Booking Confirmed!</h1>
+            <p class="message">
+                Great news! Your court booking has been successfully confirmed. 
+                Get ready for an amazing sports experience!
+            </p>
+            
+            <div class="divider"></div>
+            
+            <!-- Booking Details -->
+            <div class="booking-details">
+                <h3>Your Booking Details</h3>
+                <div class="detail-row">
+                    <span class="detail-label">Arena:</span>
+                    <span class="detail-value">${booking.arena_name}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Court:</span>
+                    <span class="detail-value">${booking.court_name}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Date:</span>
+                    <span class="detail-value">${booking.booking_date}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Time:</span>
+                    <span class="detail-value">${booking.start_time} - ${booking.end_time}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Booking ID:</span>
+                    <span class="detail-value">#${booking.bookingId}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Total Amount:</span>
+                    <span class="detail-value">Rs. ${booking.total_price}</span>
+                </div>
+            </div>
+            
+            <!-- Call to Action -->
+            <div class="cta-container">
+                <a href="${cloudinaryUrl}" class="download-btn" target="_blank">
+                    📄 Download Your Invoice
+                </a>
+            </div>
+            
+            <!-- Additional Information -->
+            <div class="additional-info">
+                <h4>Important Reminders:</h4>
+                <ul>
+                    <li>Please arrive 10 minutes before your scheduled time</li>
+                    <li>Bring appropriate sports attire and equipment</li>
+                    <li>Keep your booking confirmation for entry</li>
+                </ul>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <p style="text-align: center; color: #666; font-size: 14px; margin-top: 30px;">
+                Need help? Contact our support team or check your dashboard for more details.
+            </p>
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            <div class="contact-info">
+                <p><strong>Courtfind Support</strong></p>
+                <p>Email: <a href="mailto:courtfindbookings@gmail.com">courtfindbookings@gmail.com</a></p>
+            </div>
+            
+            <p style="margin-top: 20px; font-size: 12px; color: #bdc3c7;">
+                © 2025 Courtfind. All rights reserved.<br>
+                This email was sent to you because you made a booking on our platform.
+            </p>
+        </div>
+    </div>`
+      };
+
+      await transporter.sendMail(mailOptions);
+      console.log('Invoice email sent to:', booking.email);
+    } catch (emailErr) {
+      console.error('Failed to send invoice email:', emailErr);
+    }
 
     console.log('=== BOOKING INVOICE GENERATION SUCCESS ===');
 
