@@ -12,6 +12,7 @@
   "description": "",
   "dependencies": {
     "@google/generative-ai": "^0.23.0",
+    "@prisma/client": "^6.16.2",
     "axios": "^1.8.1",
     "bcrypt": "^5.1.1",
     "bcryptjs": "^3.0.1",
@@ -33,7 +34,12 @@
     "nodemailer": "^6.10.0",
     "path": "^0.12.7",
     "pdfkit": "^0.17.1",
+    "prisma": "^6.16.2",
     "react-chartjs-2": "^5.3.0",
     "stripe": "^18.3.0"
+  },
+  "prisma": {
+    "schema": "./prisma/schema.prisma",
+    "seed": "node prisma/seed.js"
   }
 }

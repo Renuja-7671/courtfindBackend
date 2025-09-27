@@ -2,6 +2,7 @@ const arena = require("../models/arenaModel");
 
 exports.getAllArenas = async (req, res) => {
     try {
+        console.log("Fetching all arenas..."); // Debugging line
         const results = await arena.getAllArenas();
         
         if (results.length === 0) {

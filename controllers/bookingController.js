@@ -8,7 +8,7 @@ exports.setABooking = async (req, res) => {
         const playerId = req.user.userId;
         const ownerId = req.body.owner_id; 
         const arenaId = req.body.arenaId; 
-        //console.log("Booking data received:", req.body); // Debugging line
+        console.log("Booking data received:", req.body); // Debugging line
         //console.log("Player ID:", playerId); // Debugging line
 
         if (!courtId || !booking_date || !start_time || !end_time || !total_price || !payment_status || !status || !ownerId || !arenaId) {

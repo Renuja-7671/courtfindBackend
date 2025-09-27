@@ -92,8 +92,8 @@ model Booking {
   ownerId            Int?
   arenaId            Int?
   bookingDate        DateTime       @map("booking_date") @db.Date
-  startTime          DateTime       @map("start_time") @db.Time(0)
-  endTime            DateTime       @map("end_time") @db.Time(0)
+  startTime          String         @map("start_time")
+  endTime            String         @map("end_time")
   totalPrice         Decimal?       @map("total_price") @db.Decimal(10, 2)
   paymentStatus      PaymentStatus? @default(Pending) @map("payment_status")
   status             BookingStatus? @default(Booked)

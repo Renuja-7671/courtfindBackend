@@ -17,6 +17,7 @@ const arena = {
                     }
                 }
             });
+            console.log("The arenas fetched are:", arenas);
 
             // Transform to match original flat structure
             const result = [];
@@ -53,8 +54,7 @@ const arena = {
                 whereClause.courts = {
                     some: {
                         sport: {
-                            contains: sport,
-                            mode: 'insensitive'
+                            contains: sport
                         }
                     }
                 };
@@ -65,13 +65,11 @@ const arena = {
                     {
                         name: {
                             contains: venue,
-                            mode: 'insensitive'
                         }
                     },
                     {
                         city: {
                             contains: venue,
-                            mode: 'insensitive'
                         }
                     }
                 ];
