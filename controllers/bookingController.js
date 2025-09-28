@@ -81,3 +81,25 @@ exports.getBookingDetailsForPayment = async (req, res) => {
         res.status(500).json({ error: "Database error" });
     }
 };
+
+exports.getNeededInfoForBooking = async (req, res) => {
+  try {
+    const bookingId = req.params.bookingId;
+
+    if (!bookingId) {
+      return res.status(400).json({ error: "Booking ID is required" });
+    }
+
+    const result = await PlayerBooking.getNeededInfoForBooking(bookingId);
+    
+    if (!result) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    console.log("Needed info for booking:", result); // Debugging line
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ error: "Database error" });
+  }
+};

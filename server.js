@@ -9,9 +9,6 @@ const app = express();
 
 // Fix CORS configuration
 app.use(cors({
-  // origin: process.env.NODE_ENV === 'production' 
-  //   ? ['*'] // Replace with your real Vercel URL
-  //   : ['*'],
   origin:true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

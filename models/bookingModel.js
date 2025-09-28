@@ -269,6 +269,61 @@ const PlayerBooking = {
             console.error('Error updating payments table:', error);
             throw error;
         }
+    }, 
+
+    getNeededInfoForBooking: async (bookingId) => {
+        try {
+            const booking = await prisma.booking.findUnique({
+                where: {
+                    bookingId: parseInt(bookingId)
+                },
+                include: {
+                    player: {
+                        select: {
+                            firstName: true,
+                            lastName: true,
+                            email: true,
+                            mobile: true,
+                            address: true,
+                            country: true,
+                            province: true
+                        }
+                    },
+                    court: {
+                        select: {
+                            name: true
+                        }
+                    },
+                    arena: {
+                        select: {
+                            name: true,
+                            city: true
+                        }
+                    }
+                }
+            });
+
+            if (!booking) {
+                throw new Error("Booking not found");
+            }
+
+            return {
+                courtName: booking.court?.name || null,
+                firstName: booking.player?.firstName || null,
+                lastName: booking.player?.lastName || null,
+                email: booking.player?.email || null,
+                mobile: booking.player?.mobile || null,
+                address: booking.player?.address || null,
+                city: booking.player?.province || null,
+                arenaName: booking.arena?.name || null,
+                bookingDate: booking.bookingDate,
+                startTime: booking.startTime,
+                endTime: booking.endTime
+            };
+        } catch (error) {
+            console.error('Error getting needed info for booking:', error);
+            throw error;
+        }
     }
 };
 

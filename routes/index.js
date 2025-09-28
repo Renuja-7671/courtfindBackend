@@ -12,6 +12,7 @@ const courtRoutes = require("./courtRoutes");
 const stripeRoutes = require("./stripeRoutes"); // Stripe routes
 const bookingRoutes = require("./bookingRoutes"); // Booking routes
 const reportRoutes = require("./reportRoutes"); // Report routes
+const paymentRoutes = require("./paymentRoutes"); // Payment routes
 
 
 router.use("/owner", ownerRoutes); // Owner routes
@@ -25,6 +26,7 @@ router.use("/courts", courtRoutes); // Sport routes
 router.use("/stripe", stripeRoutes); // Stripe payment routes
 router.use("/booking", bookingRoutes); // Booking routes
 router.use("/report", reportRoutes); // Booking routes
+router.use("/payment", paymentRoutes); // Payment routes
 
 
 
