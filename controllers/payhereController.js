@@ -7,41 +7,38 @@ const PAYHERE_MERCHANT_ID = process.env.PAYHERE_MERCHANT_ID;
 const PAYHERE_MERCHANT_SECRET = process.env.PAYHERE_MERCHANT_SECRET;
 const PAYHERE_SANDBOX = process.env.PAYHERE_SANDBOX;
 
-// Generate MD5 hash for PayHere
+
 const generateMD5Hash = (text) => {
   return crypto.createHash('md5').update(text).digest('hex').toUpperCase();
 };
 
-// Create PayHere payment hash
 exports.createPayHereHash = async (req, res) => {
   try {
     const { merchant_id, order_id, amount, currency } = req.body;
-
-    if (!merchant_id || !order_id || !amount || !currency) {
-      return res.status(400).json({ 
-        error: "Missing required fields: merchant_id, order_id, amount, currency" 
-      });
-    }
-
-    // Generate hash: MD5(merchant_id + order_id + amount + currency + MD5(merchant_secret))
-    const merchantSecretHash = generateMD5Hash(PAYHERE_MERCHANT_SECRET);
-    const hashString = `${merchant_id}${order_id}${amount}${currency}${merchantSecretHash}`;
+    
+    // Use the test merchant secret
+    const merchantSecret = "4vfKH6EkRPTiZyQKLNW9MzgZ6PnvqLVBo2vB1cTrY3uN";
+    
+    // Format amount exactly as PayHere expects
+    const formattedAmount = parseFloat(amount).toFixed(2);
+    
+    // Generate hash exactly as PayHere documentation shows
+    const merchantSecretHash = generateMD5Hash(merchantSecret);
+    const hashString = `${merchant_id}${order_id}${formattedAmount}${currency}${merchantSecretHash}`;
     const hash = generateMD5Hash(hashString);
-
-    console.log('PayHere hash generated for order:', order_id);
-
-    res.json({
-      success: true,
-      hash: hash,
-      sandbox: PAYHERE_SANDBOX
+    
+    console.log('Hash generation:', {
+      merchant_id,
+      order_id,
+      amount: formattedAmount,
+      currency,
+      hash
     });
-
+    
+    res.json({ success: true, hash });
   } catch (error) {
-    console.error('Error generating PayHere hash:', error);
-    res.status(500).json({ 
-      error: 'Failed to generate payment hash',
-      message: error.message 
-    });
+    console.error('Hash error:', error);
+    res.status(500).json({ error: 'Hash generation failed' });
   }
 };
 
