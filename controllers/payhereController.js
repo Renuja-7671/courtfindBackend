@@ -1,6 +1,8 @@
 // controllers/payhereController.js
 const crypto = require('crypto');
 const PlayerBooking = require("../models/bookingModel");
+const ArenaPayment = require("../models/arenaPaymentModel");
+const { arena } = require('../prisma/client');
 
 // PayHere configuration (use environment variables)
 const PAYHERE_MERCHANT_ID = process.env.PAYHERE_MERCHANT_ID;
@@ -158,7 +160,7 @@ exports.verifyPayHerePayment = async (req, res) => {
       bookingId: bookingId,
       paymentStatus: booking.payment_status,
       bookingStatus: booking.status,
-      orderId: orderId
+      orderId: orderId || null
     });
 
   } catch (error) {
@@ -192,4 +194,84 @@ exports.getPaymentMethods = (req, res) => {
     currencies: ['LKR', 'USD', 'EUR', 'GBP', 'AUD'],
     sandbox: PAYHERE_SANDBOX
   });
+};
+
+exports.getNeededInfoForArenaAddition = async (req, res) => {
+  try {
+    const arenaId = req.params.arenaId;
+
+    if (!arenaId) {
+      return res.status(400).json({ error: "arena ID is required" });
+    }
+
+    const result = await ArenaPayment.getNeededInfoForArenaAddition(arenaId);
+    
+    if (!result) {
+      return res.status(404).json({ error: "Arena not found" });
+    }
+
+    console.log("Needed info for arena addition:", result); // Debugging line
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ error: "Database error" });
+  }
+};
+
+//verify arena addition payment
+exports.verifyPayHereArenaPayment = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    // Extract booking ID from order ID (format: COURT_123)
+    const arenaId = orderId.replace('ARENA_', '');
+
+    // Get booking payment status
+    const arena = await ArenaPayment.getArenaPaymentStatus(arenaId);
+
+    if (!arena) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Arena not found' 
+      });
+    }
+
+    res.json({
+      success: true,
+      arenaId: arenaId,
+      paidStatus: arena.paidStatus,
+      orderId: orderId || null
+    });
+
+  } catch (error) {
+    console.error('Error verifying PayHere payment:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to verify payment',
+      message: error.message 
+    });
+  }
+};
+
+// Update owner payments table after successful arena payment
+exports.updateOwnerPaymentsTable = async (req, res) => {
+  try {
+    const { arenaId, ownerId, total } = req.body;
+    const paymentDesc = `Payment for arena addition ${arenaId}`;
+    const payment_method = "PayHere";
+
+    if (!arenaId || !ownerId || !total) {
+      return res.status(400).json({ error: "Arena ID, Owner ID, and Total are required" });
+    }
+
+    console.log("Updating owner payments table for arena:", arenaId, "Owner ID:", ownerId, "Total:", total);
+
+    await ArenaPayment.updateOwnerPaymentsTable(arenaId, ownerId, total, paymentDesc, payment_method);
+
+    res.json({ success: true, message: "Owner payments table updated successfully" });
+
+  } catch (error) {
+    console.error("Error updating owner payments table:", error);
+    res.status(500).json({ error: "Failed to update owner payments table" });
+  }
 };

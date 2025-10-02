@@ -18,10 +18,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// IMPORTANT: Webhook route BEFORE express.json() middleware
-app.use("/api/stripe/webhook", express.raw({ type: 'application/json' }), require("./controllers/stripeWebhookController"));
-
-// Other routes
+// Routes
 app.use('/api', routes);
 
 // Static file serving

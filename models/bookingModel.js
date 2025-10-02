@@ -259,7 +259,7 @@ const PlayerBooking = {
                     bookingId: parseInt(bookingId),
                     arenaId: parseInt(arenaId),
                     ownerId: parseInt(ownerId),
-                    playerId: parseInt(playerId),
+                    playerId: parseInt(playerId) || null,
                     paymentDesc: paymentDesc
                 }
             });
@@ -324,7 +324,75 @@ const PlayerBooking = {
             console.error('Error getting needed info for booking:', error);
             throw error;
         }
-    }
+    },
+    updateBookingPaymentStatus: async (bookingId, status) => {
+        try {
+            const updatedBooking = await prisma.booking.update({
+                where: {
+                    bookingId: parseInt(bookingId)
+                },
+                data: {
+                    paymentStatus: status
+                }
+            });
+            return updatedBooking;
+        } catch (error) {
+            console.error('Error updating booking payment status:', error);
+            throw error;
+        }
+    },
+    storePaymentDetails: async (details) => {
+        try {
+            const {
+                bookingId,
+                paymentId,
+                orderId,
+                amount,
+                currency,
+                method,
+                cardHolderName,
+                cardNo,
+                status,
+                arenaId
+            } = details;
+            const paymentDetail = await prisma.paymentDetails.create({
+                data: {
+                    bookingId: bookingId ? parseInt(bookingId) : null,
+                    arenaId: arenaId ? parseInt(arenaId) : null,
+                    paymentId: paymentId || null,
+                    orderId: orderId || null,
+                    amount: amount ? parseFloat(amount) : null,
+                    currency: currency || null,
+                    method: method || null,
+                    cardHolderName: cardHolderName || null,
+                    cardNo: cardNo || null,
+                    status: status || null
+                }
+            });
+            return paymentDetail;
+        } catch (error) {
+            console.error('Error storing payment details:', error);
+            throw error;
+        }
+    },
+    getBookingPaymentStatus: async (bookingId) => {
+        try {
+            const booking = await prisma.booking.findUnique({
+                where: {
+                    bookingId: parseInt(bookingId)
+                },
+                select: {
+                    payment_status: true,
+                    status: true
+                }
+            });
+            return booking;
+        } catch (error) {
+            console.error('Error getting booking payment status:', error);
+            throw error;
+        }
+    },
+
 };
 
 module.exports = PlayerBooking;

@@ -1,3 +1,23 @@
+model PaymentDetails {
+  id             Int      @id @default(autoincrement())
+  bookingId      Int?
+  arenaId        Int?
+  paymentId      String?  @db.VarChar(100)
+  orderId        String?  @db.VarChar(100)
+  amount         Decimal? @db.Decimal(10, 2)
+  currency       String?  @db.VarChar(10)
+  method         String?  @db.VarChar(50)
+  cardHolderName String?  @db.VarChar(100)
+  cardNo         String?  @db.VarChar(50)
+  status         String?  @db.VarChar(50)
+  createdAt      DateTime? @default(now())
+  booking        Booking? @relation(fields: [bookingId], references: [bookingId], onDelete: NoAction, onUpdate: NoAction)
+  arena          Arena?   @relation(fields: [arenaId], references: [arenaId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([bookingId], map: "bookingId")
+  @@index([arenaId], map: "arenaId")
+  @@map("payment_details")
+}
 generator client {
   provider = "prisma-client-js"
 }
@@ -54,6 +74,7 @@ model Arena {
   courts            Court[]
   payments          Payment[]
   reviews           Review[]
+  paymentDetails     PaymentDetails[]
 
   @@index([ownerId], map: "owner_id")
   @@map("arenas")
@@ -105,6 +126,7 @@ model Booking {
   owner              User?          @relation("OwnerBookings", fields: [ownerId], references: [userId], onDelete: NoAction, onUpdate: NoAction, map: "bookings_ibfk_3")
   arena              Arena?         @relation(fields: [arenaId], references: [arenaId], onDelete: NoAction, onUpdate: NoAction, map: "bookings_ibfk_4")
   payments           Payment[]
+  paymentDetails     PaymentDetails[]
 
   @@index([arenaId], map: "arenaId")
   @@index([courtId], map: "courtId")

@@ -1,11 +1,10 @@
 const express = require("express");
 const { submitContactForm } = require("../controllers/contactController");
 const { chatWithGemini } = require("../controllers/geminiController");
-const { getArenaCourtDetails } = require("../controllers/courtViewingController");
 const { getAllSports } = require('../controllers/sportController');
 const { searchArenas } = require('../controllers/arenaController');
 const { getArenaByRating } = require('../controllers/arenaController');
-const { getCourtsForBooking } = require('../controllers/courtController');
+const { getCourtsForBooking, getArenaCourtDetails } = require('../controllers/courtController');
 const { getBookingTimesByCourtId } = require('../controllers/bookingController');
 const playerReviewController = require("../controllers/playerReviewController");
 const loginActivityController = require('../controllers/loginActivityController');
