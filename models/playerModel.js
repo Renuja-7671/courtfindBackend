@@ -1,32 +1,70 @@
-const db = require('../config/db');
+const prisma = require('../prisma/client');
 
 const Player = {
-    getBookingsByPlayerId: (playerId, callback) => {
-        const query = `
-            SELECT a.name, b.booking_date, b.start_time, b.end_time, b.status, a.image_url
-            FROM bookings b
-            JOIN arenas a ON b.arenaId = a.arenaId
-            WHERE b.playerId = ?;
-        `;
-        db.query(query, [playerId], callback);
+    getBookingsByPlayerId: async (playerId) => {
+        try {
+            const bookings = await prisma.booking.findMany({
+                where: {
+                    playerId: parseInt(playerId)
+                },
+                include: {
+                    arena: {
+                        select: {
+                            name: true,
+                            imageUrl: true
+                        }
+                    }
+                }
+            });
+
+            // Transform to match original structure
+            return bookings.map(booking => ({
+                name: booking.arena.name,
+                booking_date: booking.bookingDate,
+                start_time: booking.startTime,
+                end_time: booking.endTime,
+                status: booking.status,
+                image_url: booking.arena.imageUrl
+            }));
+        } catch (error) {
+            console.error('Error getting bookings by player ID:', error);
+            throw error;
+        }
     },
 
-    getArenaCourtDetails: (callback) => {
-        const query = `
-            SELECT 
-                a.name AS arena_name,
-                c.name AS court_name,
-                c.availability AS court_availability,
-                c.images AS court_images,
-                u.address AS arena_address,
-                a.country AS arena_country,
-                c.availability AS court_opening_hours
-            FROM courts c
-            JOIN arenas a ON c.arenaId = a.arenaId
-            JOIN users u ON a.owner_id = u.userId;
-        `;
-        db.query(query, callback);
-    },
+    getArenaCourtDetails: async () => {
+        try {
+            const courtDetails = await prisma.court.findMany({
+                include: {
+                    arena: {
+                        select: {
+                            name: true,
+                            country: true,
+                            owner: {
+                                select: {
+                                    address: true
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Transform to match original structure
+            return courtDetails.map(court => ({
+                arena_name: court.arena.name,
+                court_name: court.name,
+                court_availability: court.availability,
+                court_images: court.images,
+                arena_address: court.arena.owner.address,
+                arena_country: court.arena.country,
+                court_opening_hours: court.availability
+            }));
+        } catch (error) {
+            console.error('Error getting arena court details:', error);
+            throw error;
+        }
+    }
 };
 
 module.exports = Player;

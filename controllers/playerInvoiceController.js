@@ -4,26 +4,26 @@ const { generateInvoicePDF } = require("../services/invoiceService");
 const { uploadPDFToCloudinary } = require("../utils/cloudinaryUpload");
 const fs = require("fs");
 
+const nodemailer = require("nodemailer");
+
 exports.handleInvoiceGeneration = async (req, res) => {
   const { bookingId } = req.params;
 
-  console.log('=== BOOKING INVOICE GENERATION START ===');
   console.log('Booking ID:', bookingId);
 
   try {
     // Step 1: Get booking details
-    const bookingData = await new Promise((resolve, reject) => {
-      PlayerBooking.getFullBookingDetails(bookingId, (err, data) => {
-        if (err || !data || data.length === 0) {
-          console.error("Booking not found:", err);
-          reject(new Error("Booking not found"));
-        } else {
-          console.log('Booking details retrieved:', data[0]);
-          resolve(data[0]);
-        }
+    const bookingData = await PlayerBooking.getFullBookingDetails(bookingId);
+    
+    if (!bookingData) {
+      console.error("Booking not found");
+      return res.status(404).json({ 
+        message: "Booking not found", 
+        success: false 
       });
-    });
+    }
 
+    console.log('Booking details retrieved:', bookingData);
     const booking = bookingData;
 
     // Step 2: Create temp directory and file path
@@ -68,21 +68,115 @@ exports.handleInvoiceGeneration = async (req, res) => {
     }
 
     // Step 7: Update database with Cloudinary URL
-    await new Promise((resolve, reject) => {
-      PlayerBooking.updateInvoiceAndPaymentStatus(
-        bookingId,
-        cloudinaryUrl, // Store the Cloudinary URL instead of local path
-        (updateErr) => {
-          if (updateErr) {
-            console.error('Error updating booking:', updateErr);
-            reject(new Error("Failed to update booking"));
-          } else {
-            console.log('Booking updated with invoice URL');
-            resolve();
-          }
+    await PlayerBooking.updateInvoiceAndPaymentStatus(bookingId, cloudinaryUrl);
+    console.log('Booking updated with invoice URL');
+
+    // Step 8: Send invoice link via email to customer
+    try {
+      // Setup nodemailer transporter
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASS
         }
-      );
-    });
+      });
+
+      const mailOptions = {
+        from: `Courtfind <${process.env.EMAIL_USER}>`,
+        to: booking.email,
+        subject: 'Courtfind Booking Invoice',
+        html: `<div class="email-container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">COURTFIND</div>
+            <div class="header-subtitle">Your Sports Arena Booking Platform</div>
+            <div class="success-icon"></div>
+        </div>
+        
+        <!-- Content -->
+        <div class="content">
+            <h1 class="greeting">Booking Confirmed!</h1>
+            <p class="message">
+                Great news! Your court booking has been successfully confirmed. 
+                Get ready for an amazing sports experience!
+            </p>
+            
+            <div class="divider"></div>
+            
+            <!-- Booking Details -->
+            <div class="booking-details">
+                <h3>Your Booking Details</h3>
+                <div class="detail-row">
+                    <span class="detail-label">Arena:</span>
+                    <span class="detail-value">${booking.arena_name}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Court:</span>
+                    <span class="detail-value">${booking.court_name}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Date:</span>
+                    <span class="detail-value">${booking.booking_date}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Time:</span>
+                    <span class="detail-value">${booking.start_time} - ${booking.end_time}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Booking ID:</span>
+                    <span class="detail-value">#${booking.bookingId}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Total Amount:</span>
+                    <span class="detail-value">Rs. ${booking.total_price}</span>
+                </div>
+            </div>
+            
+            <!-- Call to Action -->
+            <div class="cta-container">
+                <a href="${cloudinaryUrl}" class="download-btn" target="_blank">
+                    📄 Download Your Invoice
+                </a>
+            </div>
+            
+            <!-- Additional Information -->
+            <div class="additional-info">
+                <h4>Important Reminders:</h4>
+                <ul>
+                    <li>Please arrive 10 minutes before your scheduled time</li>
+                    <li>Bring appropriate sports attire and equipment</li>
+                    <li>Keep your booking confirmation for entry</li>
+                </ul>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <p style="text-align: center; color: #666; font-size: 14px; margin-top: 30px;">
+                Need help? Contact our support team or check your dashboard for more details.
+            </p>
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            <div class="contact-info">
+                <p><strong>Courtfind Support</strong></p>
+                <p>Email: <a href="mailto:courtfindbookings@gmail.com">courtfindbookings@gmail.com</a></p>
+            </div>
+            
+            <p style="margin-top: 20px; font-size: 12px; color: #bdc3c7;">
+                © 2025 Courtfind. All rights reserved.<br>
+                This email was sent to you because you made a booking on our platform.
+            </p>
+        </div>
+    </div>`
+      };
+
+      await transporter.sendMail(mailOptions);
+      console.log('Invoice email sent to:', booking.email);
+    } catch (emailErr) {
+      console.error('Failed to send invoice email:', emailErr);
+    }
 
     console.log('=== BOOKING INVOICE GENERATION SUCCESS ===');
 
@@ -122,47 +216,50 @@ exports.downloadInvoice = (req, res) => {
   });
 };
 
-exports.getOwnerIdAndArenaIdForBooking = (req, res) => {
-  const bookingId = req.params.bookingId;
+exports.getOwnerIdAndArenaIdForBooking = async (req, res) => {
+  try {
+    const bookingId = req.params.bookingId;
 
-  if (!bookingId) {
-    return res.status(400).json({ error: "Booking ID is required" });
-  }
-
-  PlayerBooking.getOwnerIdForBooking(bookingId, (err, result) => {
-    if (err) {
-      console.error("Error fetching owner ID:", err);
-      return res.status(500).json({ error: "Failed to fetch owner ID" });
+    if (!bookingId) {
+      return res.status(400).json({ error: "Booking ID is required" });
     }
 
-    if (result.length === 0) {
+    const result = await PlayerBooking.getOwnerIdForBooking(bookingId);
+    
+    if (!result) {
       return res.status(404).json({ error: "Booking not found" });
     }
+
     const ownerId = result.ownerId;
     const arenaId = result.arenaId;
     console.log("Owner ID and Arena ID fetched successfully:", ownerId, arenaId);
+    
     // Return both ownerId and arenaId
     res.status(200).json({ ownerId, arenaId });
-  });
+  } catch (err) {
+    console.error("Error fetching owner ID:", err);
+    res.status(500).json({ error: "Failed to fetch owner ID" });
+  }
 };
 
-exports.updatePaymentsTable = (req, res) => {
-  const { bookingId, ownerId, arenaId, total } = req.body;
-  const playerId = req.user.userId;
+exports.updatePaymentsTable = async (req, res) => {
+  try {
+    const { bookingId, ownerId, arenaId, total } = req.body;
+    const playerId = req.user.userId;
 
-  if (!bookingId || !ownerId || !total) {
-    return res.status(400).json({ error: "Booking ID, Owner ID, and Total are required" });
-  }
-  const paymentDesc = `Payment for booking ${bookingId}`;
-  const payment_method = "Stripe";
-  console.log("Updating payments table for booking:", bookingId, "Owner ID:", ownerId, "Total:", total, "arenaId:", arenaId, "playerId:", playerId);  
-
-  PlayerBooking.updatePaymentsTable(bookingId, paymentDesc, total, payment_method, ownerId, arenaId, playerId,  (err) => {
-    if (err) {
-      console.error("Error updating payments table:", err);
-      return res.status(500).json({ error: "Failed to update payments table" });
+    if (!bookingId || !ownerId || !total) {
+      return res.status(400).json({ error: "Booking ID, Owner ID, and Total are required" });
     }
 
+    const paymentDesc = `Payment for booking ${bookingId}`;
+    const payment_method = "Stripe";
+    console.log("Updating payments table for booking:", bookingId, "Owner ID:", ownerId, "Total:", total, "arenaId:", arenaId, "playerId:", playerId);  
+
+    await PlayerBooking.updatePaymentsTable(bookingId, paymentDesc, total, payment_method, ownerId, arenaId, playerId);
+    
     res.status(200).json({ message: "Payments table updated successfully" });
-  });
-}
+  } catch (err) {
+    console.error("Error updating payments table:", err);
+    res.status(500).json({ error: "Failed to update payments table" });
+  }
+};

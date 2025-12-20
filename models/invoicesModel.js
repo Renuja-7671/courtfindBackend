@@ -1,14 +1,39 @@
-const db = require("../config/db");
+const prisma = require('../prisma/client');
+
 const Invoice = {
-    getPlayerInvoicesByPlayerId: (playerId, callback) => {
-        const query = `
-            SELECT a.name, b.booking_date, b.start_time, b.end_time, b.status, a.image_url,b.invoices_url
-            FROM bookings b
-            JOIN arenas a ON b.arenaId = a.arenaId
-            WHERE b.playerId = ?
-            ORDER BY b.booking_date DESC;
-        `;
-        db.query(query, [playerId], callback);
+    getPlayerInvoicesByPlayerId: async (playerId) => {
+        try {
+            const bookings = await prisma.booking.findMany({
+                where: {
+                    playerId: parseInt(playerId)
+                },
+                include: {
+                    arena: {
+                        select: {
+                            name: true,
+                            imageUrl: true
+                        }
+                    }
+                },
+                orderBy: {
+                    bookingDate: 'desc'
+                }
+            });
+
+            // Transform to match original structure
+            return bookings.map(booking => ({
+                name: booking.arena.name,
+                booking_date: booking.bookingDate,
+                start_time: booking.startTime,
+                end_time: booking.endTime,
+                status: booking.status,
+                image_url: booking.arena.imageUrl,
+                invoices_url: booking.invoicesUrl
+            }));
+        } catch (error) {
+            console.error('Error getting player invoices by player ID:', error);
+            throw error;
+        }
     }
 };
 

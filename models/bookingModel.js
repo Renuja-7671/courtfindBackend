@@ -1,99 +1,398 @@
-const db = require("../config/db");
+const prisma = require('../prisma/client');
 
 const PlayerBooking = {
-    getBookingsByPlayerId: (playerId, callback) => {
-        const query = `SELECT a.name,c.name AS courtName, b.booking_date, b.start_time, b.end_time, b.status, a.image_url, b.payment_status
-                        FROM bookings b, arenas a, courts c
-                        WHERE b.arenaId = a.arenaId AND b.courtId = c.courtId AND b.playerId = ?;`;
-        db.query(query, [playerId], callback);
-    },
-    setABooking: (bookingData, callback) => {
-        const { playerId, courtId, booking_date, start_time, end_time, total_price, payment_status, status, ownerId, arenaId } = bookingData;
-        const query = "INSERT INTO bookings (playerId, courtId, booking_date, start_time, end_time, total_price, payment_status, status, ownerId, arenaId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
-        db.query(query, [playerId, courtId, booking_date, start_time, end_time, total_price, payment_status, status, ownerId, arenaId], callback);
-    },
-    getBookingTimesByCourtId: (courtId, bookingDate, callback) => {
-        const query = "SELECT start_time, end_time FROM bookings WHERE courtId = ? AND booking_date = ? AND payment_status = 'Paid'";
-        db.query(query, [courtId, bookingDate], callback);
-    },
-    getIdOfLastBooking: (playerId, callback) => {
-        const query = "SELECT bookingId FROM bookings WHERE playerId = ? ORDER BY bookingId DESC LIMIT 1;";
-        db.query(query, [playerId], (err, results) => {
-            if (err) {
-                return callback(err);
-            }
-            if (results.length > 0) {
-                return callback(null, results[0].bookingId);
-            } else {
-                return callback(null, null); // No bookings found
-            }
-        });
-    },
-    getBookingDetailsForPayment: (bookingId, callback) => {
-        const query = `
-            SELECT b.bookingId, b.total_price, b.payment_status, b.ownerId, a.name AS arena_name, c.name AS court_name
-            FROM bookings b
-            JOIN arenas a ON b.arenaId = a.arenaId
-            JOIN courts c ON b.courtId = c.courtId
-            WHERE b.bookingId = ?;
-        `;
-        db.query(query, [bookingId], callback);
-    },
-    updateInvoiceAndPaymentStatus: (bookingId, invoiceUrl, callback) => {
-        const query = `
-            UPDATE bookings
-            SET payment_status = 'Paid',
-                invoices_url = ?
-            WHERE bookingId = ?;
-        `;
-        db.query(query, [invoiceUrl, bookingId], callback);
-        },
+    getBookingsByPlayerId: async (playerId) => {
+        try {
+            const bookings = await prisma.booking.findMany({
+                where: {
+                    playerId: parseInt(playerId)
+                },
+                include: {
+                    arena: {
+                        select: {
+                            name: true,
+                            imageUrl: true
+                        }
+                    },
+                    court: {
+                        select: {
+                            name: true
+                        }
+                    }
+                }
+            });
 
-    getFullBookingDetails: (bookingId, callback) => {
-        const query = `
-            SELECT b.bookingId, b.booking_date, b.start_time, b.end_time, b.total_price, 
-                    b.status, b.payment_status, b.created_at,
-                    u.firstName, u.lastName, u.email,
-                    c.name AS court_name,
-                    a.name AS arena_name
-            FROM bookings b
-            JOIN users u ON b.playerId = u.userId
-            JOIN courts c ON b.courtId = c.courtId
-            JOIN arenas a ON b.arenaId = a.arenaId
-            WHERE b.bookingId = ?;
-        `;
-        db.query(query, [bookingId], callback);
-        },
-
-    getOwnerIdForBooking: (bookingId, callback) => {
-        const query = "SELECT ownerId, arenaId FROM bookings WHERE bookingId = ?;";
-        db.query(query, [bookingId], (err, results) => {
-            if (err) {
-                return callback(err);
-            }
-            if (results.length > 0) {
-                return callback(null, results[0]);
-            } else {
-                return callback(new Error("Booking not found"));
-            }
-        });
+            // Transform to match original structure
+            return bookings.map(booking => ({
+                name: booking.arena.name,
+                courtName: booking.court.name,
+                booking_date: booking.bookingDate,
+                start_time: booking.startTime,
+                end_time: booking.endTime,
+                status: booking.status,
+                image_url: booking.arena.imageUrl,
+                payment_status: booking.paymentStatus
+            }));
+        } catch (error) {
+            console.error('Error getting bookings by player ID:', error);
+            throw error;
+        }
     },
 
-    updatePaymentsTable: (bookingId, paymentDesc, total, payment_method, ownerId, arenaId, playerId, callback) => {
-        const query = `
-      INSERT INTO payments (amount, payment_method, bookingId, arenaId, ownerId, playerId, paymentDesc)
-      VALUES (?, ?, ?, ?, ?, ?, ?);
-    `;
-    db.query(query, [total, payment_method, bookingId, arenaId, ownerId, playerId, paymentDesc], (err, results) => {
-      if (err) {
-        console.error("Database error:", err);
-        return callback(err);
-      }
-      callback(null, results);
-    });
-    }
+    setABooking: async (bookingData) => {
+        try {
+            const { playerId, courtId, booking_date, start_time, end_time, total_price, payment_status, status, ownerId, arenaId } = bookingData;
 
-    
+            const newBooking = await prisma.booking.create({
+                data: {
+                    playerId: parseInt(playerId),
+                    courtId: parseInt(courtId),
+                    bookingDate: new Date(booking_date),
+                    startTime: start_time,
+                    endTime: end_time,
+                    totalPrice: parseFloat(total_price),
+                    paymentStatus: payment_status,
+                    status: status,
+                    ownerId: parseInt(ownerId),
+                    arenaId: parseInt(arenaId)
+                }
+            });
+
+            return newBooking;
+        } catch (error) {
+            console.error('Error setting booking:', error);
+            throw error;
+        }
+    },
+
+    getBookingTimesByCourtId: async (courtId, bookingDate) => {
+        try {
+            const bookings = await prisma.booking.findMany({
+                where: {
+                    courtId: parseInt(courtId),
+                    bookingDate: new Date(bookingDate),
+                    paymentStatus: 'Paid'
+                },
+                select: {
+                    startTime: true,
+                    endTime: true
+                }
+            });
+
+            return bookings.map(booking => ({
+                start_time: booking.startTime,
+                end_time: booking.endTime
+            }));
+        } catch (error) {
+            console.error('Error getting booking times by court ID:', error);
+            throw error;
+        }
+    },
+
+    getIdOfLastBooking: async (playerId) => {
+        try {
+            const booking = await prisma.booking.findFirst({
+                where: {
+                    playerId: parseInt(playerId)
+                },
+                orderBy: {
+                    bookingId: 'desc'
+                },
+                select: {
+                    bookingId: true
+                }
+            });
+
+            return booking ? booking.bookingId : null;
+        } catch (error) {
+            console.error('Error getting ID of last booking:', error);
+            throw error;
+        }
+    },
+
+    getBookingDetailsForPayment: async (bookingId) => {
+        try {
+            const booking = await prisma.booking.findUnique({
+                where: {
+                    bookingId: parseInt(bookingId)
+                },
+                include: {
+                    arena: {
+                        select: {
+                            name: true
+                        }
+                    },
+                    court: {
+                        select: {
+                            name: true
+                        }
+                    }
+                },
+                select: {
+                    bookingId: true,
+                    totalPrice: true,
+                    paymentStatus: true,
+                    ownerId: true,
+                    arena: true,
+                    court: true
+                }
+            });
+
+            if (!booking) {
+                return null;
+            }
+
+            return {
+                bookingId: booking.bookingId,
+                total_price: booking.totalPrice,
+                payment_status: booking.paymentStatus,
+                ownerId: booking.ownerId,
+                arena_name: booking.arena.name,
+                court_name: booking.court.name
+            };
+        } catch (error) {
+            console.error('Error getting booking details for payment:', error);
+            throw error;
+        }
+    },
+
+    updateInvoiceAndPaymentStatus: async (bookingId, invoiceUrl) => {
+        try {
+            const updatedBooking = await prisma.booking.update({
+                where: {
+                    bookingId: parseInt(bookingId)
+                },
+                data: {
+                    paymentStatus: 'Paid',
+                    invoicesUrl: invoiceUrl
+                }
+            });
+
+            return updatedBooking;
+        } catch (error) {
+            console.error('Error updating invoice and payment status:', error);
+            throw error;
+        }
+    },
+
+    getFullBookingDetails: async (bookingId) => {
+        try {
+            const booking = await prisma.booking.findUnique({
+                where: {
+                    bookingId: parseInt(bookingId)
+                },
+                include: {
+                    player: {
+                        select: {
+                            firstName: true,
+                            lastName: true,
+                            email: true
+                        }
+                    },
+                    court: {
+                        select: {
+                            name: true
+                        }
+                    },
+                    arena: {
+                        select: {
+                            name: true
+                        }
+                    }
+                }
+            });
+
+            if (!booking) {
+                return null;
+            }
+
+            return {
+                bookingId: booking.bookingId,
+                booking_date: booking.bookingDate,
+                start_time: booking.startTime,
+                end_time: booking.endTime,
+                total_price: booking.totalPrice,
+                status: booking.status,
+                payment_status: booking.paymentStatus,
+                created_at: booking.createdAt,
+                firstName: booking.player.firstName,
+                lastName: booking.player.lastName,
+                email: booking.player.email,
+                court_name: booking.court.name,
+                arena_name: booking.arena.name
+            };
+        } catch (error) {
+            console.error('Error getting full booking details:', error);
+            throw error;
+        }
+    },
+
+    getOwnerIdForBooking: async (bookingId) => {
+        try {
+            const booking = await prisma.booking.findUnique({
+                where: {
+                    bookingId: parseInt(bookingId)
+                },
+                select: {
+                    ownerId: true,
+                    arenaId: true
+                }
+            });
+
+            if (!booking) {
+                throw new Error("Booking not found");
+            }
+
+            return booking;
+        } catch (error) {
+            console.error('Error getting owner ID for booking:', error);
+            throw error;
+        }
+    },
+
+    updatePaymentsTable: async (bookingId, paymentDesc, total, payment_method, ownerId, arenaId, playerId) => {
+        try {
+            const payment = await prisma.payment.create({
+                data: {
+                    amount: parseFloat(total),
+                    paymentMethod: payment_method,
+                    bookingId: parseInt(bookingId),
+                    arenaId: parseInt(arenaId),
+                    ownerId: parseInt(ownerId),
+                    playerId: parseInt(playerId) || null,
+                    paymentDesc: paymentDesc
+                }
+            });
+
+            return payment;
+        } catch (error) {
+            console.error('Error updating payments table:', error);
+            throw error;
+        }
+    }, 
+
+    getNeededInfoForBooking: async (bookingId) => {
+        try {
+            const booking = await prisma.booking.findUnique({
+                where: {
+                    bookingId: parseInt(bookingId)
+                },
+                include: {
+                    player: {
+                        select: {
+                            firstName: true,
+                            lastName: true,
+                            email: true,
+                            mobile: true,
+                            address: true,
+                            country: true,
+                            province: true
+                        }
+                    },
+                    court: {
+                        select: {
+                            name: true
+                        }
+                    },
+                    arena: {
+                        select: {
+                            name: true,
+                            city: true
+                        }
+                    }
+                }
+            });
+
+            if (!booking) {
+                throw new Error("Booking not found");
+            }
+
+            return {
+                courtName: booking.court?.name || null,
+                firstName: booking.player?.firstName || null,
+                lastName: booking.player?.lastName || null,
+                email: booking.player?.email || null,
+                mobile: booking.player?.mobile || null,
+                address: booking.player?.address || null,
+                city: booking.player?.province || null,
+                arenaName: booking.arena?.name || null,
+                bookingDate: booking.bookingDate,
+                startTime: booking.startTime,
+                endTime: booking.endTime
+            };
+        } catch (error) {
+            console.error('Error getting needed info for booking:', error);
+            throw error;
+        }
+    },
+    updateBookingPaymentStatus: async (bookingId, status) => {
+        try {
+            const updatedBooking = await prisma.booking.update({
+                where: {
+                    bookingId: parseInt(bookingId)
+                },
+                data: {
+                    paymentStatus: status
+                }
+            });
+            return updatedBooking;
+        } catch (error) {
+            console.error('Error updating booking payment status:', error);
+            throw error;
+        }
+    },
+    storePaymentDetails: async (details) => {
+        try {
+            const {
+                bookingId,
+                paymentId,
+                orderId,
+                amount,
+                currency,
+                method,
+                cardHolderName,
+                cardNo,
+                status,
+                arenaId
+            } = details;
+            const paymentDetail = await prisma.paymentDetails.create({
+                data: {
+                    bookingId: bookingId ? parseInt(bookingId) : null,
+                    arenaId: arenaId ? parseInt(arenaId) : null,
+                    paymentId: paymentId || null,
+                    orderId: orderId || null,
+                    amount: amount ? parseFloat(amount) : null,
+                    currency: currency || null,
+                    method: method || null,
+                    cardHolderName: cardHolderName || null,
+                    cardNo: cardNo || null,
+                    status: status || null
+                }
+            });
+            return paymentDetail;
+        } catch (error) {
+            console.error('Error storing payment details:', error);
+            throw error;
+        }
+    },
+    getBookingPaymentStatus: async (bookingId) => {
+        try {
+            const booking = await prisma.booking.findUnique({
+                where: {
+                    bookingId: parseInt(bookingId)
+                },
+                select: {
+                    payment_status: true,
+                    status: true
+                }
+            });
+            return booking;
+        } catch (error) {
+            console.error('Error getting booking payment status:', error);
+            throw error;
+        }
+    },
+
 };
 
 module.exports = PlayerBooking;

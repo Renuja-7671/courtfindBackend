@@ -10,44 +10,38 @@ const fs = require("fs");
 const cloudinary = require("../config/cloudinary"); 
 const { uploadPDFToCloudinary } = require("../utils/cloudinaryUpload");
 
-
-
 exports.changePassword = async (req, res) => {
-    const userId = req.user.userId;
-    const { currentPassword, newPassword } = req.body;
-   
+    try {
+        const userId = req.user.userId;
+        const { currentPassword, newPassword } = req.body;
+       
+        if (!userId || !currentPassword || !newPassword) {
+            return res.status(400).json({ message: "All fields are required" });
+        }
 
-    if (!userId || !currentPassword || !newPassword) {
-        return res.status(400).json({ message: "All fields are required" });
-    }
-
-    // Fetch user from database
-    const sql = 'SELECT password FROM users WHERE userId = ?';
-    db.query(sql, [userId], async (err, results) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-
-        if (results.length === 0) {
+        // Fetch user from database
+        const user = await User.findById(userId);
+        
+        if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
 
-        const user = results[0];
-        //const passwordMatch = await bcrypt.compare(currentPassword, user.password);
+        const passwordMatch = await bcrypt.compare(currentPassword, user.password);
 
-        if (currentPassword!==user.password) {
+        if (!passwordMatch) {
             return res.status(400).json({ message: "Incorrect current password" });
         }
 
         // Hash new password and update
-        //const hashedPassword = await bcrypt.hash(newPassword, 10);
-        const updateSql = 'UPDATE users SET password = ? WHERE userId = ?';
-        db.query(updateSql, [newPassword, userId], (err, result) => {
-            if (err) return res.status(500).json({ message: "Error updating password" });
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await User.updateUserPassword(userId, hashedPassword);
 
-            res.json({ message: "Password updated successfully" });
-        });
-    });
+        res.json({ message: "Password updated successfully" });
+    } catch (err) {
+        console.error("Error changing password:", err);
+        res.status(500).json({ message: "Error updating password" });
+    }
 };
-
 
 exports.dashboard = (req, res) => {
     res.json({ message: "Welcome to the Owner Dashboard", user: req.user });
@@ -62,19 +56,17 @@ exports.getOwnerProfile = async (req, res) => {
     try {
         const ownerId = req.user.userId;
         console.log("The ID of the user: ", ownerId);
-        User.getOwnerProfile(ownerId, async (err, results) =>{
-            if (err) {
-                console.error("Database error:", err);
-                return res.status(500).json({ message: "Database error", error: err });
-            }
-            if (results.length === 0) {
-                return res.status(404).json({ message: "Profile not found" });
-            }
-            const profile = results[0];
-            //console.log("The profile data: ", profile);
-            res.json(profile);
-        });
+        
+        const results = await User.getOwnerProfile(ownerId);
+        
+        if (!results) {
+            return res.status(404).json({ message: "Profile not found" });
+        }
+        
+        //console.log("The profile data: ", results);
+        res.json(results);
     } catch (error) {
+        console.error("Database error:", error);
         res.status(500).json({ message: "Error fetching profile", error });
     }
 };
@@ -85,14 +77,11 @@ exports.updateOwnerProfile = async (req, res) => {
         const ownerId = req.user.userId;
         const profileData = req.body;
         //console.log("The profile data: ", profileData);
-        User.updateOwnerProfile(ownerId, profileData, (err, results) =>{
-            if (err) {
-                console.error("Database error:", err);
-                return res.status(500).json({ message: "Database error", error: err });
-            }
-            res.json({ message: "Profile updated successfully" });
-        });
+        
+        await User.updateOwnerProfile(ownerId, profileData);
+        res.json({ message: "Profile updated successfully" });
     } catch (error) {
+        console.error("Database error:", error);
         res.status(500).json({ message: "Error updating profile", error });
     }
 };
@@ -117,19 +106,18 @@ exports.uploadProfileImage = async (req, res) => {
 exports.getProfileImage = async (req, res) => {
     try {
         const userId = req.user.userId;
-        User.getProfileImage(userId, async (err, results) =>{
-            if (err) {
-                console.error("Database error:", err);
-                return res.status(500).json({ message: "Database error", error: err });
-            }
-            if (results.length === 0) {
-                return res.status(404).json({ message: "Profile image not found" });
-            }
-            const imageUrl = results[0].profileImage;
-            //console.log("The image URL: ", imageUrl);
-            res.json(imageUrl);
-        });
+        
+        const result = await User.getProfileImage(userId);
+        
+        if (!result) {
+            return res.status(404).json({ message: "Profile image not found" });
+        }
+        
+        const imageUrl = result.profileImage;
+        //console.log("The image URL: ", imageUrl);
+        res.json(imageUrl);
     } catch (error) {
+        console.error("Database error:", error);
         res.status(500).json({ message: "Error fetching profile image", error });
     }
 };
@@ -163,7 +151,6 @@ exports.getStats = async (req, res) => {
         console.error('Error fetching stats:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
-  
 };
 
 exports.getIncomeOverview = async (req, res) => {
@@ -176,7 +163,6 @@ exports.getIncomeOverview = async (req, res) => {
         console.error('Error fetching income overview:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
-  
 };
 
 exports.getTotalIncomeForYear = async (req, res) => {
@@ -185,7 +171,7 @@ exports.getTotalIncomeForYear = async (req, res) => {
         const year = req.params.year;
         const totalIncome = await OwnerDashboard.getTotalIncomeForYear(ownerId, year);
         res.json(totalIncome);
-    } catch {
+    } catch (error) {
         console.error('Error fetching total income:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
@@ -237,7 +223,7 @@ exports.fetchSelectedArenaBookings = async (req, res) => {
         console.error('Error fetching selected arena bookings:', error);
         res.status(500).json({ message: 'Internal server error' });
         }
-    };    
+};    
     
 exports.fetchArenasOfOwner = async (req, res) => {
     try {
@@ -248,7 +234,7 @@ exports.fetchArenasOfOwner = async (req, res) => {
             console.error('Error fetching arenas of owner:', error);
             res.status(500).json({ message: 'Internal server error' });
             }
-     };
+};
 
 exports.updateCancelStatus = async (req, res) => {
     try {
@@ -334,22 +320,19 @@ exports.getYearlyChartData = async (req, res) => {
 };
 
 exports.getMonthlyChartData = async (req, res) => {
-    console.log("Raw query params:", req.query);
-    const { year, month } = req.query;
-    console.log("Parsed values:", { year: typeof year, month: typeof month });
-    const ownerId = req.user.userId;
-    
-    // Convert to numbers explicitly
-    const numYear = parseInt(year) || new Date().getFullYear();
-    const numMonth = parseInt(month) || new Date().getMonth() + 1;
-    console.log("Final values:", { numYear, numMonth });
-    
-    const chartData = await OwnerDashboard.fetchMonthlyChartData(ownerId, numYear, numMonth);
-    console.log(" Monthly Chart Query Params:", req.query);
     try {
+        console.log("Raw query params:", req.query);
+        const { year, month } = req.query;
+        console.log("Parsed values:", { year: typeof year, month: typeof month });
         const ownerId = req.user.userId;
-        const { year, month } = req.query; // Optional year/month from query params
-        const chartData = await OwnerDashboard.fetchMonthlyChartData(ownerId, year, month);
+        
+        // Convert to numbers explicitly
+        const numYear = parseInt(year) || new Date().getFullYear();
+        const numMonth = parseInt(month) || new Date().getMonth() + 1;
+        console.log("Final values:", { numYear, numMonth });
+        
+        console.log(" Monthly Chart Query Params:", req.query);
+        const chartData = await OwnerDashboard.fetchMonthlyChartData(ownerId, numYear, numMonth);
         res.json(chartData);
     } catch (error) {
         console.error('Error fetching monthly chart data:', error);
@@ -416,8 +399,6 @@ exports.getArenaCourtYearlyData = async (req, res) => {
         const chartData = await OwnerDashboard.fetchArenaCourtYearlyData(arenaId, year);
         res.json(chartData);
     } catch (error) {
-        if (!arena) {
-    return res.status(404).json({ error: 'Arena not found' });}
         console.error('Error fetching arena court yearly data:', error);
         res.status(500).json({ error: 'Failed to fetch chart data' });
     }
@@ -459,30 +440,21 @@ exports.generateArenaInvoice = async (req, res) => {
 
   try {
     // Step 1: Set price for arena
-    await new Promise((resolve, reject) => {
-      arena.setPriceForNewArena(arenaId, price, (err) => {
-        if (err) {
-          console.error("Error setting price for new arena:", err);
-          reject(new Error("Failed to set price for new arena"));
-        } else {
-          console.log('Price set successfully');
-          resolve();
-        }
-      });
-    });
+    await arena.setPriceForNewArena(arenaId, price);
+    console.log('Price set successfully');
 
     // Step 2: Get arena details
-    const arenaData = await new Promise((resolve, reject) => {
-      arena.getArenaDetails(arenaId, (err, data) => {
-        if (err || !data || data.length === 0) {
-          console.error("Arena not found:", err);
-          reject(new Error("Arena not found"));
-        } else {
-          console.log('Arena details retrieved:', data[0]);
-          resolve(data[0]);
-        }
+    const arenaData = await arena.getArenaDetails(arenaId);
+    
+    if (!arenaData) {
+      console.error("Arena not found");
+      return res.status(404).json({
+        message: "Arena not found",
+        success: false
       });
-    });
+    }
+
+    console.log('Arena details retrieved:', arenaData);
 
     // Step 3: Prepare arena details for PDF
     const arenaDetails = arenaData;
@@ -531,17 +503,8 @@ exports.generateArenaInvoice = async (req, res) => {
     }
 
     // Step 9: Update database
-    await new Promise((resolve, reject) => {
-      arena.markAsPaid(arenaId, cloudinaryUrl, (updateErr) => {
-        if (updateErr) {
-          console.error('Error marking arena as paid:', updateErr);
-          reject(new Error("Failed to update arena status"));
-        } else {
-          console.log('Arena marked as paid in database');
-          resolve();
-        }
-      });
-    });
+    await arena.markAsPaid(arenaId, cloudinaryUrl);
+    console.log('Arena marked as paid in database');
 
     console.log('=== ARENA INVOICE GENERATION SUCCESS ===');
 
@@ -567,7 +530,6 @@ exports.generateArenaInvoice = async (req, res) => {
   }
 };
 
-
 exports.updatePaymentsTableForArenaAdd = async (req, res) => {
   const { arenaId, total } = req.body;
   const ownerId = req.user.userId;
@@ -586,9 +548,7 @@ exports.updatePaymentsTableForArenaAdd = async (req, res) => {
     console.error("Error updating payment status:", error);
     res.status(500).json({ message: "Failed to update payment status", error });
   }
-}
-
-const ownerModel = require('../models/ownerModel');
+};
 
 exports.getArenaRevenueDistribution = async (req, res) => {
   try {
@@ -606,5 +566,3 @@ exports.getArenaRevenueDistribution = async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 };
-
-
